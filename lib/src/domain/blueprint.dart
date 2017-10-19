@@ -3,13 +3,14 @@ import 'package:built_swagger/src/domain/path.dart';
 import 'package:built_swagger/src/domain/operation.dart';
 
 class Blueprint {
-  final Iterable<Bundle> bundles;
+  final List<Bundle> bundles;
 
   Blueprint(List<Map<String, String>> tags,
       Map<String, Map<String, Map<String, dynamic>>> paths)
       : this.bundles = tags
             .map((Map<String, String> tag) => tag['name'])
-            .map((String name) => new Bundle(name)) {
+            .map((String name) => new Bundle(name))
+            .toList(growable: false) {
     _extractPaths(paths);
   }
 
@@ -18,7 +19,8 @@ class Blueprint {
       List<Operation> operations = <Operation>[];
 
       body.forEach((String operation, Map<String, dynamic> data) {
-        operations.add(new Operation(operation, data));
+        operations
+            .add(new Operation(operation, pathName, data['description'], data));
       });
 
       Path path = new Path(pathName, operations);
@@ -34,11 +36,6 @@ class Blueprint {
             path.operations.where((Operation operation) =>
                 operation.parentResources.contains(bundle.name))));
       });
-
-      print(new Set.from(path.operations
-          .map((Operation operation) => operation.parentResources)
-          .expand((List<String> resources) => resources)));
-
       //bundles.where((Bundle bundle) => );
     });
   }

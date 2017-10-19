@@ -5,6 +5,5 @@ class Bundle {
   final List<Path> paths = <Path>[];
 
   Bundle(this.name) {
-    //print(name);
   }
 }
