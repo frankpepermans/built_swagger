@@ -103,6 +103,7 @@ class SwaggerGenerator extends Generator {
         });
 
         flatList.forEach((_PathPart pathPart) {
+          Map<String, List<String>> enumMap = <String, List<String>>{};
           String className =
               '_${pathPart.segment[0].toUpperCase()}${pathPart.segment.substring(1)}${pathPart.classIndex}';
 
@@ -126,6 +127,12 @@ class SwaggerGenerator extends Generator {
                 buffer.writeln('/// ${nextPathPart.operation.description}');
               }
 
+              nextPathPart.operation.parameters
+                  .where((Parameter parameter) => parameter.values != null)
+                  .forEach((Parameter parameter) => enumMap.putIfAbsent(
+                      '${className}_${parameter.name}',
+                      () => parameter.values['enum']));
+
               buffer.writeln('Future<dynamic> ${nextPathPart.segment}(');
 
               List<Parameter> pathParameters = nextPathPart.operation.parameters
@@ -138,7 +145,7 @@ class SwaggerGenerator extends Generator {
 
               buffer.writeln(pathParameters
                   .map((Parameter parameter) =>
-                      'final ${parameter.returnType} ${parameter.name}')
+                      'final ${_toReturnType(className, parameter)} ${parameter.name}')
                   .join(','));
 
               if (pathParameters.isNotEmpty && otherParameters.isNotEmpty)
@@ -148,10 +155,10 @@ class SwaggerGenerator extends Generator {
 
               buffer.writeln(otherParameters.map((Parameter parameter) {
                 if (parameter.isRequired) {
-                  return 'final ${parameter.returnType} ${parameter.name}';
+                  return 'final ${_toReturnType(className, parameter)} ${parameter.name}';
                 }
 
-                return 'final ${parameter.returnType} ${parameter.name}:null';
+                return 'final ${_toReturnType(className, parameter)} ${parameter.name}:null';
               }).join(','));
 
               if (otherParameters.isNotEmpty) buffer.writeln('}');
@@ -172,8 +179,13 @@ class SwaggerGenerator extends Generator {
                   .toList(growable: false);
 
               if (queryParameters.isNotEmpty)
-                url +=
-                    '?${queryParameters.map((Parameter parameter) => '${parameter.name}=\$${parameter.name}').join('&')}';
+                url += '?${queryParameters.map((Parameter parameter) {
+                if (parameter.collectionFormat == 'multi') {
+                  return '''\${${parameter.name}.map((${className}_${parameter.name} entry) => '${parameter.name}=\${entry.toJson()}').join('&')}''';
+                }
+
+                return '${parameter.name}=\$${parameter.name}';
+                    }).join('&')}';
 
               url += "'";
 
@@ -216,7 +228,27 @@ class SwaggerGenerator extends Generator {
             }
           });
 
+          enumMap.forEach((String K, List<String> V) {
+            buffer.writeln(
+                '$K get ${K.split('_').last}Enums => const $K._(null);');
+          });
+
           buffer.writeln('}');
+
+          enumMap.forEach((String K, List<String> V) {
+            buffer.writeln('class $K {');
+            buffer.writeln('final String _value;');
+            buffer.writeln('const $K._(this._value);');
+
+            V.forEach((String enumValue) {
+              buffer.writeln("$K get $enumValue => const $K._('$enumValue');");
+            });
+
+            buffer.writeln('@override String toString() => _value;');
+            buffer.writeln('String toJson() => _value;');
+
+            buffer.writeln('}');
+          });
         });
 
         return buffer.toString();
@@ -224,6 +256,12 @@ class SwaggerGenerator extends Generator {
     }
 
     return null;
+  }
+
+  String _toReturnType(String className, Parameter parameter) {
+    if (parameter.values == null) return parameter.returnType;
+
+    return '${parameter.returnType}<${className}_${parameter.name}>';
   }
 
   String _bundleNameToClassName(Bundle bundle) {

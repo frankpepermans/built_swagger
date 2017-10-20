@@ -26,12 +26,23 @@ class Operation {
     final List<Parameter> pathParameters = new RegExp(r'{([^}]+)}')
         .allMatches(path)
         .map((Match match) =>
-            new Parameter(match.group(1), true, 'path', 'string'))
+            new Parameter(match.group(1), true, 'path', 'string', null, null))
         .toList(growable: false);
+
+    raw.forEach((_) {
+      if (_['type'] == 'array') {
+        print(_);
+      }
+    });
 
     final List<Parameter> otherParameters = raw
         .map((Map<String, dynamic> raw) => new Parameter(
-            raw['name'], raw['required'] == 'true', raw['in'], raw['type']))
+            raw['name'],
+            raw['required'] == 'true',
+            raw['in'],
+            raw['type'],
+            raw['items'],
+            raw['collectionFormat']))
         .toList(growable: false);
 
     return new List<Parameter>.from(pathParameters)
