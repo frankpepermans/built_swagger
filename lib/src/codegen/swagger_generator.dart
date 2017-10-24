@@ -14,14 +14,18 @@ class SwaggerGenerator extends Generator {
   @override
   Future<String> generate(Element element, _) async {
     if (element is ClassElement) {
-      final ElementAnnotation annotation = element.metadata.firstWhere(
+      final ElementAnnotation remoteAnnotation = element.metadata.firstWhere(
           (ElementAnnotation annotation) =>
               annotation.toSource().contains('@Remote('),
           orElse: () => null);
 
-      if (annotation != null) {
+      final Iterable<ElementAnnotation> middlewareAnnotations = element.metadata.where(
+              (ElementAnnotation annotation) =>
+              annotation.toSource().contains('@Middleware('));
+
+      if (remoteAnnotation != null) {
         final String swaggerUrl = new RegExp(r"@Remote\('([^']+)'\)")
-            .firstMatch(annotation.toSource())
+            .firstMatch(remoteAnnotation.toSource())
             .group(1);
         final StringBuffer buffer = new StringBuffer();
         final SwaggerService service = new SwaggerService();
@@ -44,6 +48,12 @@ class SwaggerGenerator extends Generator {
             '''import 'package:taurus_security/taurus_security.dart' show ConfigExternalizable;''');
         buffer.writeln(
             '''import 'package:xpert_libraries/src/infrastructure/config_service.dart' show ConfigService, Config;''');
+
+        final String parentLib = new RegExp(r'[^|]+').firstMatch(element.source.fullName).group(0);
+        final String parentPath = new RegExp(r'\/.+').firstMatch(element.source.fullName).group(0);
+
+        buffer.writeln(
+            '''import 'package:$parentLib$parentPath';''');
 
         buffer.writeln(
             'const List<Type> remoteServices = const <Type>[${data.bundles.map(_bundleNameToClassName).join(',')}];');
@@ -213,6 +223,19 @@ class SwaggerGenerator extends Generator {
               }
 
               buffer.writeln(')');
+
+              middlewareAnnotations.forEach((ElementAnnotation annotation) {
+                final String method = new RegExp(r"@Middleware\((\w+), RunOn.(\w+)\)")
+                    .firstMatch(annotation.toSource())
+                    .group(1);
+
+                /*final String event = new RegExp(r"@Middleware\((\w+), RunOn.(\w+)\)")
+                    .firstMatch(annotation.toSource())
+                    .group(2);*/
+
+                buffer
+                    .writeln('.then($method)');
+              });
 
               buffer
                   .writeln('.then((http.Response response) => response.body)');
