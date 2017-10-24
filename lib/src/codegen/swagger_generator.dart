@@ -42,8 +42,6 @@ class SwaggerGenerator extends Generator {
             '''import 'package:http/browser_client.dart' show BrowserClient;''');
         buffer.writeln(
             '''import 'package:http/http.dart' as http show Response;''');
-        buffer
-            .writeln('''import 'package:logging/logging.dart' show Logger;''');
         buffer.writeln(
             '''import 'package:taurus_security/taurus_security.dart' show ConfigExternalizable;''');
         buffer.writeln(
@@ -66,8 +64,6 @@ class SwaggerGenerator extends Generator {
           buffer.writeln('class $bundleClassName {');
 
           buffer.writeln('final ConfigService _configService;');
-          buffer.writeln(
-              '''final Logger _log = new Logger('$bundleClassName');''');
           buffer.writeln();
           buffer.writeln(
               '$bundleClassName(@Inject(ConfigExternalizable) this._configService);');
@@ -106,7 +102,7 @@ class SwaggerGenerator extends Generator {
                 '_${pathPart.segment[0].toUpperCase()}${pathPart.segment.substring(1)}${pathPart.classIndex}';
 
             buffer.writeln(
-                '$className get ${pathPart.segment} => new $className(_configService, _log);');
+                '$className get ${pathPart.segment} => new $className(_configService);');
           });
 
           buffer.writeln('}');
@@ -120,8 +116,7 @@ class SwaggerGenerator extends Generator {
           buffer.writeln('class $className {');
 
           buffer.writeln('final ConfigService _configService;');
-          buffer.writeln('final Logger _log;');
-          buffer.writeln('$className(this._configService, this._log);');
+          buffer.writeln('$className(this._configService);');
 
           pathPart.next.forEach((_PathPart nextPathPart) {
             if (nextPathPart.next.isNotEmpty) {
@@ -129,7 +124,7 @@ class SwaggerGenerator extends Generator {
                   '_${nextPathPart.segment[0].toUpperCase()}${nextPathPart.segment.substring(1)}${nextPathPart.classIndex}';
 
               buffer.writeln(
-                  '$className get ${nextPathPart.segment} => new $className(_configService, _log);');
+                  '$className get ${nextPathPart.segment} => new $className(_configService);');
             }
 
             if (nextPathPart.hasOperation) {
@@ -201,8 +196,23 @@ class SwaggerGenerator extends Generator {
 
               buffer.writeln(
                   'final BrowserClient client = new BrowserClient()..withCredentials = true;');
-              buffer.writeln(
-                  '''_log.info(new JsonEncoder.withIndent('  ').convert(<String, dynamic>{'path': '${nextPathPart.operation.path}', 'operation': '${nextPathPart.operation.name}', 'remoteMethodName': '${nextPathPart.operation.method}', 'parameters': <String, dynamic>{${nextPathPart.operation.parameters.map((Parameter parameter) => "'${parameter.name}':'\${${parameter.name}}'").join(',')}}}));''');
+
+              middlewareAnnotations.forEach((ElementAnnotation annotation) {
+                final String method = new RegExp(r"@Middleware\((\w+), RunOn.(\w+)\)")
+                    .firstMatch(annotation.toSource())
+                    .group(1);
+
+                final String event = new RegExp(r"@Middleware\((\w+), RunOn.(\w+)\)")
+                    .firstMatch(annotation.toSource())
+                    .group(2);
+
+                if (event == 'LOGGING') {
+                  buffer.writeln(
+                      '''$method(<String, dynamic>{'path': '${nextPathPart.operation.path}', 'operation': '${nextPathPart.operation.name}', 'remoteMethodName': '${nextPathPart.operation.method}', 'parameters': <String, dynamic>{${nextPathPart.operation.parameters.map((Parameter parameter) => "'${parameter.name}':'\${${parameter.name}}'").join(',')}}});''');
+
+                }
+              });
+
               buffer.writeln('return _configService.getConfig()');
               buffer.writeln(
                   '.then((Config config) => client.${nextPathPart.operation.name}($url');
@@ -229,11 +239,11 @@ class SwaggerGenerator extends Generator {
                     .firstMatch(annotation.toSource())
                     .group(1);
 
-                /*final String event = new RegExp(r"@Middleware\((\w+), RunOn.(\w+)\)")
+                final String event = new RegExp(r"@Middleware\((\w+), RunOn.(\w+)\)")
                     .firstMatch(annotation.toSource())
-                    .group(2);*/
+                    .group(2);
 
-                buffer
+                if (event != 'LOGGING') buffer
                     .writeln('.then($method)');
               });
 

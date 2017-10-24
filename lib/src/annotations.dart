@@ -1,6 +1,4 @@
-enum RunOn {
-  ERROR
-}
+enum RunOn { ERROR, LOGGING }
 
 class Remote {
   final String url;
