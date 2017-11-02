@@ -19,8 +19,8 @@ class SwaggerGenerator extends Generator {
               annotation.toSource().contains('@Remote('),
           orElse: () => null);
 
-      final Iterable<ElementAnnotation> middlewareAnnotations = element.metadata.where(
-              (ElementAnnotation annotation) =>
+      final Iterable<ElementAnnotation> middlewareAnnotations = element.metadata
+          .where((ElementAnnotation annotation) =>
               annotation.toSource().contains('@Middleware('));
 
       if (remoteAnnotation != null) {
@@ -35,7 +35,8 @@ class SwaggerGenerator extends Generator {
         int classIndex = 0;
 
         buffer.writeln('''import 'dart:async';''');
-        buffer.writeln('''import 'dart:convert' show JSON, JsonEncoder;''');
+        buffer.writeln('''import 'dart:convert' show JSON;''');
+        buffer.writeln('''import 'dart:html' show FormData, HttpRequest;''');
         buffer.writeln(
             '''import 'package:angular2/angular2.dart' show Injectable, Inject;''');
         buffer.writeln(
@@ -47,11 +48,12 @@ class SwaggerGenerator extends Generator {
         buffer.writeln(
             '''import 'package:xpert_libraries/src/infrastructure/config_service.dart' show ConfigService, Config;''');
 
-        final String parentLib = new RegExp(r'[^|]+').firstMatch(element.source.fullName).group(0);
-        final String parentPath = new RegExp(r'\/.+').firstMatch(element.source.fullName).group(0);
+        final String parentLib =
+            new RegExp(r'[^|]+').firstMatch(element.source.fullName).group(0);
+        final String parentPath =
+            new RegExp(r'\/.+').firstMatch(element.source.fullName).group(0);
 
-        buffer.writeln(
-            '''import 'package:$parentLib$parentPath';''');
+        buffer.writeln('''import 'package:$parentLib$parentPath';''');
 
         buffer.writeln(
             'const List<Type> remoteServices = const <Type>[${data.bundles.map(_bundleNameToClassName).join(',')}];');
@@ -180,7 +182,9 @@ class SwaggerGenerator extends Generator {
                   .toList(growable: false);
               final List<Parameter> bodyParameters = nextPathPart
                   .operation.parameters
-                  .where((Parameter parameter) => parameter.location == 'body')
+                  .where((Parameter parameter) =>
+                      parameter.location == 'body' ||
+                      parameter.location == 'formData')
                   .toList(growable: false);
 
               if (queryParameters.isNotEmpty)
@@ -198,27 +202,61 @@ class SwaggerGenerator extends Generator {
                   'final BrowserClient client = new BrowserClient()..withCredentials = true;');
 
               middlewareAnnotations.forEach((ElementAnnotation annotation) {
-                final String method = new RegExp(r"@Middleware\((\w+), RunOn.(\w+)\)")
-                    .firstMatch(annotation.toSource())
-                    .group(1);
+                final String method =
+                    new RegExp(r"@Middleware\((\w+), RunOn.(\w+)\)")
+                        .firstMatch(annotation.toSource())
+                        .group(1);
 
-                final String event = new RegExp(r"@Middleware\((\w+), RunOn.(\w+)\)")
-                    .firstMatch(annotation.toSource())
-                    .group(2);
+                final String event =
+                    new RegExp(r"@Middleware\((\w+), RunOn.(\w+)\)")
+                        .firstMatch(annotation.toSource())
+                        .group(2);
 
                 if (event == 'LOGGING') {
                   buffer.writeln(
-                      '''$method(<String, dynamic>{'path': '${nextPathPart.operation.path}', 'operation': '${nextPathPart.operation.name}', 'remoteMethodName': '${nextPathPart.operation.method}', 'parameters': <String, dynamic>{${nextPathPart.operation.parameters.map((Parameter parameter) => "'${parameter.name}':'\${${parameter.name}}'").join(',')}}});''');
-
+                      '''$method(<String, dynamic>{'path': '${nextPathPart.operation.path}', 'operation': '${nextPathPart.operation.name}', 'remoteMethodName': '${nextPathPart.operation.method}', 'parameters': <String, dynamic>{${nextPathPart.operation.parameters.map((Parameter parameter) => "'${parameter.name}':'\$${parameter.name}'").join(',')}}});''');
                 }
               });
 
               buffer.writeln('return _configService.getConfig()');
-              buffer.writeln(
-                  '.then((Config config) => client.${nextPathPart.operation.name}($url');
+
+
 
               buffer.writeln(
-                  ",headers:const <String, String>{'Content-Type':'${nextPathPart.operation.requestContentType}'}");
+                  '.then((Config config) => ');
+
+              if (nextPathPart.operation.requestContentType.toLowerCase() == 'multipart/form-data' && bodyParameters.isNotEmpty) {
+                final String bodyData = bodyParameters.map((Parameter parameter) => parameter.name).first;
+
+                buffer.writeln('$bodyData != null ? ');
+                buffer.writeln('''HttpRequest.request($url, method: '${nextPathPart.operation.name.toUpperCase()}', withCredentials: true, sendData: ${bodyParameters.map((Parameter parameter) => parameter.name).first})''');
+                buffer.writeln('.then((HttpRequest response) => response.responseText)');
+                if (nextPathPart.operation.responseContentType ==
+                    'application/json') {
+                  buffer.writeln('.then(JSON.decode)');
+                }
+
+                buffer.writeln(' : ');
+                buffer.writeln(
+                    'client.${nextPathPart.operation.name}($url');
+
+
+              } else {
+                buffer.writeln(
+                    'client.${nextPathPart.operation.name}($url');
+              }
+
+
+
+
+
+
+
+              if (nextPathPart.operation.requestContentType.toLowerCase() == 'multipart/form-data' && bodyParameters.isNotEmpty) {
+              } else {
+                buffer.writeln(
+                    ",headers:const <String, String>{'Content-Type':'${nextPathPart.operation.requestContentType}'}");
+              }
 
               if (bodyParameters.isNotEmpty &&
                   nextPathPart.operation.name != 'get') {
@@ -235,16 +273,17 @@ class SwaggerGenerator extends Generator {
               buffer.writeln(')');
 
               middlewareAnnotations.forEach((ElementAnnotation annotation) {
-                final String method = new RegExp(r"@Middleware\((\w+), RunOn.(\w+)\)")
-                    .firstMatch(annotation.toSource())
-                    .group(1);
+                final String method =
+                    new RegExp(r"@Middleware\((\w+), RunOn.(\w+)\)")
+                        .firstMatch(annotation.toSource())
+                        .group(1);
 
-                final String event = new RegExp(r"@Middleware\((\w+), RunOn.(\w+)\)")
-                    .firstMatch(annotation.toSource())
-                    .group(2);
+                final String event =
+                    new RegExp(r"@Middleware\((\w+), RunOn.(\w+)\)")
+                        .firstMatch(annotation.toSource())
+                        .group(2);
 
-                if (event != 'LOGGING') buffer
-                    .writeln('.then($method)');
+                if (event != 'LOGGING') buffer.writeln('.then($method)');
               });
 
               buffer

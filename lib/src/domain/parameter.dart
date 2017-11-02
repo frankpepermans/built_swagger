@@ -20,6 +20,8 @@ class Parameter {
         return 'bool';
       case 'array':
         return 'Iterable';
+      case 'file':
+        return 'FormData';
       default:
         return 'dynamic/*$incomingType*/';
     }
