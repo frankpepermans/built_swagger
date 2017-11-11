@@ -13,10 +13,18 @@ class Operation {
       this.name, this.path, this.description, final Map<String, dynamic> data)
       : this.parentResources = data['tags'],
         this.method = data['operationId'],
-        this.requestContentType = (data['consumes'] as List<String>).first,
-        this.responseContentType = (data['produces'] as List<String>).first,
+        this.requestContentType = data.containsKey('consumes')
+            ? (data['consumes'] as List<String>).first
+            : 'application/json',
+        this.responseContentType = data.containsKey('produces')
+            ? (data['produces'] as List<String>).first
+            : 'application/json',
         this.parameters = _toParameters(path, data['parameters']) {
     //print(this.parentResources);
+    if (this.method == 'deleteClausById') {
+      print(data['parameters']);
+      print('parameters: $path');
+    }
   }
 
   static Iterable<Parameter> _toParameters(
@@ -28,12 +36,6 @@ class Operation {
         .map((Match match) =>
             new Parameter(match.group(1), true, 'path', 'string', null, null))
         .toList(growable: false);
-
-    raw.forEach((_) {
-      if (_['type'] == 'array') {
-        print(_);
-      }
-    });
 
     final List<Parameter> otherParameters = raw
         .map((Map<String, dynamic> raw) => new Parameter(
@@ -47,10 +49,13 @@ class Operation {
 
     return new List<Parameter>.from(pathParameters)
       ..addAll(otherParameters.where((Parameter parameter) =>
-          parameter.location != 'path' &&
-          pathParameters.firstWhere(
-                  (Parameter existing) => existing.name == parameter.name,
-                  orElse: () => null) ==
-              null));
+          parameter.location != 'path' ||
+          !pathParameters
+                  .map((Parameter parameter) => parameter.name)
+                  .contains(parameter.name) &&
+              pathParameters.firstWhere(
+                      (Parameter existing) => existing.name == parameter.name,
+                      orElse: () => null) ==
+                  null));
   }
 }

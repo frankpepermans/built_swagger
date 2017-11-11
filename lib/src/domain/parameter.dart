@@ -6,12 +6,14 @@ class Parameter {
   final String collectionFormat;
   final String location;
 
-  Parameter(this.name, this.isRequired, this.location, final String returnType,
-      this.values, this.collectionFormat)
-      : this.returnType = _convertType(returnType) {}
+  Parameter(String name, this.isRequired, String location,
+      final String returnType, this.values, this.collectionFormat)
+      : this.location = location,
+        this.name = location == 'body' ? 'body' : name,
+        this.returnType = _convertType(returnType) {}
 
   static String _convertType(final String incomingType) {
-    switch (incomingType) {
+    switch (incomingType?.toLowerCase()) {
       case 'string':
         return 'String';
       case 'number':
@@ -22,6 +24,8 @@ class Parameter {
         return 'Iterable';
       case 'file':
         return 'FormData';
+      case 'blob':
+        return 'Blob';
       default:
         return 'dynamic/*$incomingType*/';
     }

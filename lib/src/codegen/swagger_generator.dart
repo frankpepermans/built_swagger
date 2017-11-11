@@ -18,6 +18,21 @@ class SwaggerGenerator extends Generator {
           (ElementAnnotation annotation) =>
               annotation.toSource().contains('@Remote('),
           orElse: () => null);
+      final ElementAnnotation useCredentialsAnnotation = element.metadata
+          .firstWhere(
+              (ElementAnnotation annotation) =>
+                  annotation.toSource().contains('@UseCredentials('),
+              orElse: () => null);
+      final ElementAnnotation urlFactoryAnnotation = element.metadata
+          .firstWhere(
+              (ElementAnnotation annotation) =>
+                  annotation.toSource().contains('@UrlFactory('),
+              orElse: () => null);
+      final ElementAnnotation headersFactoryAnnotation = element.metadata
+          .firstWhere(
+              (ElementAnnotation annotation) =>
+                  annotation.toSource().contains('@HeadersFactory('),
+              orElse: () => null);
 
       final Iterable<ElementAnnotation> middlewareAnnotations = element.metadata
           .where((ElementAnnotation annotation) =>
@@ -43,10 +58,6 @@ class SwaggerGenerator extends Generator {
             '''import 'package:http/browser_client.dart' show BrowserClient;''');
         buffer.writeln(
             '''import 'package:http/http.dart' as http show Response;''');
-        buffer.writeln(
-            '''import 'package:taurus_security/taurus_security.dart' show ConfigExternalizable;''');
-        buffer.writeln(
-            '''import 'package:xpert_libraries/src/infrastructure/config_service.dart' show ConfigService, Config;''');
 
         final String parentLib =
             new RegExp(r'[^|]+').firstMatch(element.source.fullName).group(0);
@@ -65,10 +76,8 @@ class SwaggerGenerator extends Generator {
           buffer.writeln('@Injectable()');
           buffer.writeln('class $bundleClassName {');
 
-          buffer.writeln('final ConfigService _configService;');
           buffer.writeln();
-          buffer.writeln(
-              '$bundleClassName(@Inject(ConfigExternalizable) this._configService);');
+          buffer.writeln('const $bundleClassName();');
 
           bundle.paths.forEach((Path path) {
             path.operations.forEach((Operation operation) {
@@ -77,6 +86,8 @@ class SwaggerGenerator extends Generator {
               int loopIndex = 0;
 
               pathList.forEach((String segment) {
+                segment = segment == 'new' ? 'create' : segment;
+
                 _PathPart pathPart = currentBuildList.firstWhere(
                     (_PathPart pathPart) =>
                         pathPart.segment.compareTo(segment) == 0,
@@ -104,7 +115,7 @@ class SwaggerGenerator extends Generator {
                 '_${pathPart.segment[0].toUpperCase()}${pathPart.segment.substring(1)}${pathPart.classIndex}';
 
             buffer.writeln(
-                '$className get ${pathPart.segment} => new $className(_configService);');
+                '$className get ${pathPart.segment} => const $className();');
           });
 
           buffer.writeln('}');
@@ -117,8 +128,7 @@ class SwaggerGenerator extends Generator {
 
           buffer.writeln('class $className {');
 
-          buffer.writeln('final ConfigService _configService;');
-          buffer.writeln('$className(this._configService);');
+          buffer.writeln('const $className();');
 
           pathPart.next.forEach((_PathPart nextPathPart) {
             if (nextPathPart.next.isNotEmpty) {
@@ -126,7 +136,7 @@ class SwaggerGenerator extends Generator {
                   '_${nextPathPart.segment[0].toUpperCase()}${nextPathPart.segment.substring(1)}${nextPathPart.classIndex}';
 
               buffer.writeln(
-                  '$className get ${nextPathPart.segment} => new $className(_configService);');
+                  '$className get ${nextPathPart.segment} => const $className();');
             }
 
             if (nextPathPart.hasOperation) {
@@ -170,11 +180,26 @@ class SwaggerGenerator extends Generator {
 
               if (otherParameters.isNotEmpty) buffer.writeln('}');
 
-              buffer.writeln(') {');
+              buffer.writeln(') async {');
+
+              final List<Parameter> extraPathParameters =
+                  new List<Parameter>.from(pathParameters);
+
+              new RegExp(r'{([^}]+)}')
+                  .allMatches(nextPathPart.operation.path)
+                  .map((Match match) => match.group(1))
+                  .forEach((String pathParam) =>
+                      extraPathParameters.removeWhere((Parameter parameter) =>
+                          parameter.name == pathParam));
 
               String url =
-                  "'\${config.api.url}${nextPathPart.operation.path.replaceAllMapped(
+                  "'\$url${nextPathPart.operation.path.replaceAllMapped(
                   new RegExp(r'{([^}]+)}'), (Match match) => '\$${match.group(1)}')}";
+
+              if (extraPathParameters.isNotEmpty) {
+                url +=
+                    '/${extraPathParameters.map((Parameter parameter) => '\$${parameter.name}').join('/')}';
+              }
 
               final List<Parameter> queryParameters = nextPathPart
                   .operation.parameters
@@ -198,8 +223,13 @@ class SwaggerGenerator extends Generator {
 
               url += "'";
 
-              buffer.writeln(
-                  'final BrowserClient client = new BrowserClient()..withCredentials = true;');
+              if (useCredentialsAnnotation != null) {
+                buffer.writeln(
+                    'final BrowserClient client = new BrowserClient()..withCredentials = true;');
+              } else {
+                buffer.writeln(
+                    'final BrowserClient client = new BrowserClient();');
+              }
 
               middlewareAnnotations.forEach((ElementAnnotation annotation) {
                 final String method =
@@ -218,44 +248,57 @@ class SwaggerGenerator extends Generator {
                 }
               });
 
-              buffer.writeln('return _configService.getConfig()');
+              final String createUrlMethod =
+                  new RegExp(r"@UrlFactory\(([^\)]+)\)")
+                      .firstMatch(urlFactoryAnnotation.toSource())
+                      .group(1);
 
+              if (headersFactoryAnnotation != null) {
+                final String createHeadersMethod =
+                    new RegExp(r"@HeadersFactory\(([^\)]+)\)")
+                        .firstMatch(headersFactoryAnnotation.toSource())
+                        .group(1);
 
+                buffer.writeln(
+                    'final Map<String, String> headers = await $createHeadersMethod();');
+                buffer.writeln(
+                    "headers['Content-Type'] = '${nextPathPart.operation.requestContentType}';");
+              } else {
+                buffer.writeln(
+                    "final Map<String, String> headers = const <String, String>{'Content-Type':'${nextPathPart.operation.requestContentType}'};");
+              }
 
-              buffer.writeln(
-                  '.then((Config config) => ');
+              buffer.writeln('return $createUrlMethod()');
 
-              if (nextPathPart.operation.requestContentType.toLowerCase() == 'multipart/form-data' && bodyParameters.isNotEmpty) {
-                final String bodyData = bodyParameters.map((Parameter parameter) => parameter.name).first;
+              buffer.writeln('.then((String url) => ');
+
+              if (nextPathPart.operation.requestContentType.toLowerCase() ==
+                      'multipart/form-data' &&
+                  bodyParameters.isNotEmpty) {
+                final String bodyData = bodyParameters
+                    .map((Parameter parameter) => parameter.name)
+                    .first;
 
                 buffer.writeln('$bodyData != null ? ');
-                buffer.writeln('''HttpRequest.request($url, method: '${nextPathPart.operation.name.toUpperCase()}', withCredentials: true, sendData: ${bodyParameters.map((Parameter parameter) => parameter.name).first})''');
-                buffer.writeln('.then((HttpRequest response) => response.responseText)');
+                buffer.writeln(
+                    '''HttpRequest.request($url, method: '${nextPathPart.operation.name.toUpperCase()}', withCredentials: true, sendData: ${bodyParameters.map((Parameter parameter) => parameter.name).first})''');
+                buffer.writeln(
+                    '.then((HttpRequest response) => response.responseText)');
                 if (nextPathPart.operation.responseContentType ==
                     'application/json') {
                   buffer.writeln('.then(JSON.decode)');
                 }
 
                 buffer.writeln(' : ');
-                buffer.writeln(
-                    'client.${nextPathPart.operation.name}($url');
-
-
+                buffer.writeln('client.${nextPathPart.operation.name}($url');
               } else {
-                buffer.writeln(
-                    'client.${nextPathPart.operation.name}($url');
+                buffer.writeln('client.${nextPathPart.operation.name}($url');
               }
 
-
-
-
-
-
-
-              if (nextPathPart.operation.requestContentType.toLowerCase() == 'multipart/form-data' && bodyParameters.isNotEmpty) {
-              } else {
-                buffer.writeln(
-                    ",headers:const <String, String>{'Content-Type':'${nextPathPart.operation.requestContentType}'}");
+              if (nextPathPart.operation.requestContentType.toLowerCase() ==
+                      'multipart/form-data' &&
+                  bodyParameters.isNotEmpty) {} else {
+                buffer.writeln(",headers:headers");
               }
 
               if (bodyParameters.isNotEmpty &&
