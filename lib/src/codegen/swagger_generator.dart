@@ -384,7 +384,7 @@ class SwaggerGenerator extends Generator {
         new RegExp(r'-([\w]{1})'),
         (Match match) => match.group(1).toUpperCase());
 
-    return '${camelCased[0].toUpperCase()}${camelCased.substring(1)}Service';
+    return 'Taurus${camelCased[0].toUpperCase()}${camelCased.substring(1)}Service';
   }
 
   List<String> _pathToMethodName(Path path, Operation operation) {
