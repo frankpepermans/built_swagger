@@ -223,7 +223,9 @@ class SwaggerGenerator extends Generator {
 
               url += "'";
 
-              if (useCredentialsAnnotation != null) {
+              final withCredentials = (useCredentialsAnnotation != null);
+
+              if (withCredentials) {
                 buffer.writeln(
                     'final BrowserClient client = new BrowserClient()..withCredentials = true;');
               } else {
@@ -270,7 +272,7 @@ class SwaggerGenerator extends Generator {
 
               buffer.writeln('return $createUrlMethod()');
 
-              buffer.writeln('.then((String url) => ');
+              buffer.writeln('.then<dynamic>((String url) => ');
 
               if (nextPathPart.operation.requestContentType.toLowerCase() ==
                       'multipart/form-data' &&
@@ -280,13 +282,20 @@ class SwaggerGenerator extends Generator {
                     .first;
 
                 buffer.writeln('$bodyData != null ? ');
-                buffer.writeln(
-                    '''HttpRequest.request($url, method: '${nextPathPart.operation.name.toUpperCase()}', withCredentials: true, sendData: ${bodyParameters.map((Parameter parameter) => parameter.name).first})''');
+
+                if (withCredentials) {
+                  buffer.writeln(
+                      '''HttpRequest.request($url, method: '${nextPathPart.operation.name.toUpperCase()}', withCredentials: true, sendData: ${bodyParameters.map((Parameter parameter) => parameter.name).first})''');
+                } else {
+                  buffer.writeln(
+                      '''HttpRequest.request($url, method: '${nextPathPart.operation.name.toUpperCase()}', sendData: ${bodyParameters.map((Parameter parameter) => parameter.name).first})''');
+                }
+
                 buffer.writeln(
                     '.then((HttpRequest response) => response.responseText)');
                 if (nextPathPart.operation.responseContentType ==
                     'application/json') {
-                  buffer.writeln('.then(JSON.decode)');
+                  buffer.writeln('.then<dynamic>(JSON.decode)');
                 }
 
                 buffer.writeln(' : ');
@@ -329,12 +338,12 @@ class SwaggerGenerator extends Generator {
                 if (event != 'LOGGING') buffer.writeln('.then($method)');
               });
 
-              buffer
-                  .writeln('.then((http.Response response) => response.body)');
+              buffer.writeln(
+                  '.then<String>((http.Response response) => response.body)');
 
               if (nextPathPart.operation.responseContentType ==
                   'application/json') {
-                buffer.writeln('.then(JSON.decode));');
+                buffer.writeln('.then<dynamic>(JSON.decode));');
               } else {
                 buffer.writeln(');');
               }
