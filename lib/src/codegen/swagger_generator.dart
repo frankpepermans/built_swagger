@@ -54,10 +54,6 @@ class SwaggerGenerator extends Generator {
         buffer.writeln('''import 'dart:html' show FormData, HttpRequest;''');
         buffer.writeln(
             '''import 'package:angular2/angular2.dart' show Injectable, Inject;''');
-        buffer.writeln(
-            '''import 'package:http/browser_client.dart' show BrowserClient;''');
-        buffer.writeln(
-            '''import 'package:http/http.dart' as http show Response;''');
 
         final String parentLib =
             new RegExp(r'[^|]+').firstMatch(element.source.fullName).group(0);
@@ -225,14 +221,6 @@ class SwaggerGenerator extends Generator {
 
               final withCredentials = (useCredentialsAnnotation != null);
 
-              if (withCredentials) {
-                buffer.writeln(
-                    'final BrowserClient client = new BrowserClient()..withCredentials = true;');
-              } else {
-                buffer.writeln(
-                    'final BrowserClient client = new BrowserClient();');
-              }
-
               middlewareAnnotations.forEach((ElementAnnotation annotation) {
                 final String method =
                     new RegExp(r"@Middleware\((\w+), RunOn.(\w+)\)")
@@ -283,31 +271,26 @@ class SwaggerGenerator extends Generator {
 
                 buffer.writeln('$bodyData != null ? ');
 
-                if (withCredentials) {
-                  buffer.writeln(
-                      '''HttpRequest.request($url, method: '${nextPathPart.operation.name.toUpperCase()}', withCredentials: true, sendData: ${bodyParameters.map((Parameter parameter) => parameter.name).first})''');
-                } else {
-                  buffer.writeln(
-                      '''HttpRequest.request($url, method: '${nextPathPart.operation.name.toUpperCase()}', sendData: ${bodyParameters.map((Parameter parameter) => parameter.name).first})''');
-                }
+                buffer.writeln(
+                    '''HttpRequest.request($url, method: '${nextPathPart.operation.name.toUpperCase()}', withCredentials: $withCredentials, sendData: ${bodyParameters.map((Parameter parameter) => parameter.name).first})''');
 
                 buffer.writeln(
                     '.then((HttpRequest response) => response.responseText)');
                 if (nextPathPart.operation.responseContentType ==
                     'application/json') {
-                  buffer.writeln('.then<dynamic>(JSON.decode)');
+                  buffer.writeln('.then<dynamic>((String data) => data != null ? JSON.decode(data) : null)');
                 }
 
                 buffer.writeln(' : ');
-                buffer.writeln('client.${nextPathPart.operation.name}($url');
+                buffer.writeln(''' HttpRequest.request($url, method: '${nextPathPart.operation.name.toUpperCase()}', withCredentials: $withCredentials ''');
               } else {
-                buffer.writeln('client.${nextPathPart.operation.name}($url');
+                buffer.writeln(''' HttpRequest.request($url, method: '${nextPathPart.operation.name.toUpperCase()}', withCredentials: $withCredentials ''');
               }
 
               if (nextPathPart.operation.requestContentType.toLowerCase() ==
                       'multipart/form-data' &&
                   bodyParameters.isNotEmpty) {} else {
-                buffer.writeln(",headers:headers");
+                buffer.writeln(", requestHeaders: headers");
               }
 
               if (bodyParameters.isNotEmpty &&
@@ -315,10 +298,10 @@ class SwaggerGenerator extends Generator {
                 if (nextPathPart.operation.requestContentType ==
                     'application/json') {
                   buffer.writeln(
-                      ',body:JSON.encode(${bodyParameters.map((Parameter parameter) => parameter.name).first})');
+                      ', sendData: JSON.encode(${bodyParameters.map((Parameter parameter) => parameter.name).first})');
                 } else {
                   buffer.writeln(
-                      ',body:${bodyParameters.map((Parameter parameter) => parameter.name).first}');
+                      ', sendData: ${bodyParameters.map((Parameter parameter) => parameter.name).first}');
                 }
               }
 
@@ -335,15 +318,16 @@ class SwaggerGenerator extends Generator {
                         .firstMatch(annotation.toSource())
                         .group(2);
 
-                if (event != 'LOGGING') buffer.writeln('.then($method)');
+                if (event == 'ERROR') buffer.writeln('.then($method, onError: (_) {})');
+                else if (event != 'LOGGING') buffer.writeln('.then($method)');
               });
 
               buffer.writeln(
-                  '.then<String>((http.Response response) => response.body)');
+                  '.then<String>((HttpRequest request) => request?.responseText)');
 
               if (nextPathPart.operation.responseContentType ==
                   'application/json') {
-                buffer.writeln('.then<dynamic>(JSON.decode));');
+                buffer.writeln('.then<dynamic>((String data) => data != null ? JSON.decode(data) : null));');
               } else {
                 buffer.writeln(');');
               }
@@ -364,7 +348,7 @@ class SwaggerGenerator extends Generator {
             buffer.writeln('final String _value;');
             buffer.writeln('const $K._(this._value);');
 
-            V.forEach((String enumValue) {
+            V?.forEach((String enumValue) {
               buffer.writeln("$K get $enumValue => const $K._('$enumValue');");
             });
 
