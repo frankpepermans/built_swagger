@@ -318,7 +318,7 @@ class SwaggerGenerator extends Generator {
                         .firstMatch(annotation.toSource())
                         .group(2);
 
-                if (event == 'ERROR') buffer.writeln('.then($method, onError: (_) {})');
+                if (event == 'ERROR') buffer.writeln('.then($method, onError: (dynamic _) {})');
                 else if (event != 'LOGGING') buffer.writeln('.then($method)');
               });
 
