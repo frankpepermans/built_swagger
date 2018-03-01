@@ -146,7 +146,12 @@ class SwaggerGenerator extends Generator {
                       '${className}_${parameter.name}',
                       () => parameter.values['enum']));
 
-              buffer.writeln('Future<dynamic> ${nextPathPart.segment}(');
+              if (nextPathPart.operation.responseContentType ==
+                  'application/json') {
+                buffer.writeln('Future<T> ${nextPathPart.segment}<T>(');
+              } else {
+                buffer.writeln('Future<String> ${nextPathPart.segment}(');
+              }
 
               List<Parameter> pathParameters = nextPathPart.operation.parameters
                   .where((Parameter parameter) => parameter.location == 'path')
@@ -154,7 +159,12 @@ class SwaggerGenerator extends Generator {
               List<Parameter> otherParameters = nextPathPart
                   .operation.parameters
                   .where((Parameter parameter) => parameter.location != 'path')
-                  .toList(growable: false);
+                  .toList(growable: true);
+
+              if (nextPathPart.operation.responseContentType ==
+                  'application/json') {
+                otherParameters.add(null);
+              }
 
               buffer.writeln(pathParameters
                   .map((Parameter parameter) =>
@@ -167,7 +177,9 @@ class SwaggerGenerator extends Generator {
               if (otherParameters.isNotEmpty) buffer.writeln('{');
 
               buffer.writeln(otherParameters.map((Parameter parameter) {
-                if (parameter.isRequired) {
+                if (parameter == null) {
+                  return 'T convert(dynamic data)';
+                } else if (parameter.isRequired) {
                   return 'final ${_toReturnType(className, parameter)} ${parameter.name}';
                 }
 
@@ -177,6 +189,11 @@ class SwaggerGenerator extends Generator {
               if (otherParameters.isNotEmpty) buffer.writeln('}');
 
               buffer.writeln(') async {');
+
+              if (nextPathPart.operation.responseContentType ==
+                  'application/json') {
+                buffer.writeln('convert ??= (dynamic data) => data as T;');
+              }
 
               final List<Parameter> extraPathParameters =
                   new List<Parameter>.from(pathParameters);
@@ -260,7 +277,7 @@ class SwaggerGenerator extends Generator {
 
               buffer.writeln('return $createUrlMethod()');
 
-              buffer.writeln('.then<dynamic>((String url) => ');
+              buffer.writeln('.then((String url) => ');
 
               if (nextPathPart.operation.requestContentType.toLowerCase() ==
                       'multipart/form-data' &&
@@ -278,7 +295,7 @@ class SwaggerGenerator extends Generator {
                     '.then((HttpRequest response) => response.responseText)');
                 if (nextPathPart.operation.responseContentType ==
                     'application/json') {
-                  buffer.writeln('.then<dynamic>((String data) => data != null ? JSON.decode(data) : null)');
+                  buffer.writeln('.then((String data) => data != null ? convert(JSON.decode(data)) : null)');
                 }
 
                 buffer.writeln(' : ');
@@ -323,11 +340,11 @@ class SwaggerGenerator extends Generator {
               });
 
               buffer.writeln(
-                  '.then<String>((HttpRequest request) => request?.responseText)');
+                  '.then((HttpRequest request) => request?.responseText)');
 
               if (nextPathPart.operation.responseContentType ==
                   'application/json') {
-                buffer.writeln('.then<dynamic>((String data) => data != null ? JSON.decode(data) : null));');
+                buffer.writeln('.then((String data) => data != null ? convert(JSON.decode(data)) : null));');
               } else {
                 buffer.writeln(');');
               }
