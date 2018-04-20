@@ -148,7 +148,7 @@ class SwaggerGenerator extends Generator {
 
               if (nextPathPart.operation.responseContentType ==
                   'application/json') {
-                buffer.writeln('Future<T> ${nextPathPart.segment}<T>(');
+                buffer.writeln('Future<T> ${nextPathPart.segment}<T, S>(');
               } else {
                 buffer.writeln('Future<String> ${nextPathPart.segment}(');
               }
@@ -178,12 +178,12 @@ class SwaggerGenerator extends Generator {
 
               buffer.writeln(otherParameters.map((Parameter parameter) {
                 if (parameter == null) {
-                  return 'T convert(dynamic data)';
+                  return 'T convert(S data)';
                 } else if (parameter.isRequired) {
-                  return 'final ${_toReturnType(className, parameter)} ${parameter.name}';
+                  return '${_toReturnType(className, parameter)} ${parameter.name}';
                 }
 
-                return 'final ${_toReturnType(className, parameter)} ${parameter.name}:null';
+                return '${_toReturnType(className, parameter)} ${parameter.name}';
               }).join(','));
 
               if (otherParameters.isNotEmpty) buffer.writeln('}');
@@ -260,6 +260,9 @@ class SwaggerGenerator extends Generator {
                       .firstMatch(urlFactoryAnnotation.toSource())
                       .group(1);
 
+              buffer.write(
+                  'final Future<HttpRequest> Function(Map<String, String>) request = (Map<String, String> extraHeaders) async { ');
+
               if (headersFactoryAnnotation != null) {
                 final String createHeadersMethod =
                     new RegExp(r"@HeadersFactory\(([^\)]+)\)")
@@ -274,6 +277,8 @@ class SwaggerGenerator extends Generator {
                 buffer.writeln(
                     "final Map<String, String> headers = const <String, String>{'Content-Type':'${nextPathPart.operation.requestContentType}'};");
               }
+
+              buffer.writeln('headers.addAll(extraHeaders);');
 
               buffer.writeln('return $createUrlMethod()');
 
@@ -295,13 +300,16 @@ class SwaggerGenerator extends Generator {
                     '.then((HttpRequest response) => response.responseText)');
                 if (nextPathPart.operation.responseContentType ==
                     'application/json') {
-                  buffer.writeln('.then((String data) => data != null ? convert(JSON.decode(data)) : null)');
+                  buffer.writeln(
+                      '.then((String data) => data != null ? convert(JSON.decode(data) as S) : null)');
                 }
 
                 buffer.writeln(' : ');
-                buffer.writeln(''' HttpRequest.request($url, method: '${nextPathPart.operation.name.toUpperCase()}', withCredentials: $withCredentials ''');
+                buffer.writeln(
+                    ''' HttpRequest.request($url, method: '${nextPathPart.operation.name.toUpperCase()}', withCredentials: $withCredentials ''');
               } else {
-                buffer.writeln(''' HttpRequest.request($url, method: '${nextPathPart.operation.name.toUpperCase()}', withCredentials: $withCredentials ''');
+                buffer.writeln(
+                    ''' HttpRequest.request($url, method: '${nextPathPart.operation.name.toUpperCase()}', withCredentials: $withCredentials ''');
               }
 
               if (nextPathPart.operation.requestContentType.toLowerCase() ==
@@ -322,7 +330,69 @@ class SwaggerGenerator extends Generator {
                 }
               }
 
-              buffer.writeln(')');
+              buffer.writeln('));};');
+              buffer.writeln('return request(const <String, String>{})');
+
+              final ElementAnnotation runOnStatus =
+                      middlewareAnnotations.firstWhere(
+                          (ElementAnnotation annotation) =>
+                              new RegExp(r"@Middleware\((\w+), RunOn.(\w+)\)")
+                                  .firstMatch(annotation.toSource())
+                                  .group(2) ==
+                              'RETRY_ON_STATUS',
+                          orElse: () => null),
+                  runOnError = middlewareAnnotations.firstWhere(
+                      (ElementAnnotation annotation) =>
+                          new RegExp(r"@Middleware\((\w+), RunOn.(\w+)\)")
+                              .firstMatch(annotation.toSource())
+                              .group(2) ==
+                          'RETRY_ON_ERROR',
+                      orElse: () => null), requestHandler = middlewareAnnotations.firstWhere(
+                      (ElementAnnotation annotation) =>
+                  new RegExp(r"@Middleware\((\w+), RunOn.(\w+)\)")
+                      .firstMatch(annotation.toSource())
+                      .group(2) ==
+                      'REQUEST_HANDLER',
+                  orElse: () => null);
+
+              if (requestHandler != null) {
+                final String requestHandlerMethod =
+                new RegExp(r"@Middleware\((\w+), RunOn.(\w+)\)")
+                    .firstMatch(requestHandler.toSource())
+                    .group(1);
+
+                buffer.writeln(
+                    '.then($requestHandlerMethod)');
+              }
+
+              if (runOnStatus != null && runOnError != null) {
+                final String runOnStatusMethod =
+                        new RegExp(r"@Middleware\((\w+), RunOn.(\w+)\)")
+                            .firstMatch(runOnStatus.toSource())
+                            .group(1),
+                    runOnErrorMethod =
+                        new RegExp(r"@Middleware\((\w+), RunOn.(\w+)\)")
+                            .firstMatch(runOnError.toSource())
+                            .group(1);
+
+                buffer.writeln(
+                    '.then($runOnStatusMethod(request), onError: $runOnErrorMethod(request))');
+              } else if (runOnStatus != null) {
+                final String runOnStatusMethod =
+                    new RegExp(r"@Middleware\((\w+), RunOn.(\w+)\)")
+                        .firstMatch(runOnStatus.toSource())
+                        .group(1);
+
+                buffer.writeln('.then($runOnStatusMethod(request))');
+              } else if (runOnError != null) {
+                final String runOnErrorMethod =
+                    new RegExp(r"@Middleware\((\w+), RunOn.(\w+)\)")
+                        .firstMatch(runOnError.toSource())
+                        .group(1);
+
+                buffer.writeln(
+                    '.then((request) => request, onError: $runOnErrorMethod(request))');
+              }
 
               middlewareAnnotations.forEach((ElementAnnotation annotation) {
                 final String method =
@@ -335,8 +405,14 @@ class SwaggerGenerator extends Generator {
                         .firstMatch(annotation.toSource())
                         .group(2);
 
-                if (event == 'ERROR') buffer.writeln('.then($method, onError: (dynamic _) {})');
-                else if (event != 'LOGGING') buffer.writeln('.then($method)');
+                if (event == 'ERROR')
+                  buffer.writeln('.then($method, onError: (dynamic _) {})');
+                else if (!(const <String>[
+                  'LOGGING',
+                  'RETRY_ON_STATUS',
+                  'RETRY_ON_ERROR',
+                  'REQUEST_HANDLER'
+                ].contains(event))) buffer.writeln('.then($method)');
               });
 
               buffer.writeln(
@@ -344,9 +420,10 @@ class SwaggerGenerator extends Generator {
 
               if (nextPathPart.operation.responseContentType ==
                   'application/json') {
-                buffer.writeln('.then((String data) => data != null ? convert(JSON.decode(data)) : null));');
+                buffer.writeln(
+                    '.then((String data) => data != null ? convert(JSON.decode(data) as S) : null);');
               } else {
-                buffer.writeln(');');
+                buffer.writeln(';');
               }
 
               buffer.writeln('}');

@@ -1,6 +1,6 @@
 import 'dart:async';
 
-enum RunOn { ERROR, LOGGING, RESOLVE_URL, REQUEST_HANDLER }
+enum RunOn { RETRY_ON_STATUS, RETRY_ON_ERROR, ERROR, LOGGING, RESOLVE_URL, REQUEST_HANDLER }
 
 typedef Future<Map<String, String>> CreateHeaders();
 typedef Future<String> CreateUrl();
