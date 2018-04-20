@@ -275,7 +275,7 @@ class SwaggerGenerator extends Generator {
                     "headers['Content-Type'] = '${nextPathPart.operation.requestContentType}';");
               } else {
                 buffer.writeln(
-                    "final Map<String, String> headers = const <String, String>{'Content-Type':'${nextPathPart.operation.requestContentType}'};");
+                    "final Map<String, String> headers = <String, String>{'Content-Type':'${nextPathPart.operation.requestContentType}'};");
               }
 
               buffer.writeln('headers.addAll(extraHeaders);');
