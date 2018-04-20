@@ -296,14 +296,6 @@ class SwaggerGenerator extends Generator {
                 buffer.writeln(
                     '''HttpRequest.request($url, method: '${nextPathPart.operation.name.toUpperCase()}', withCredentials: $withCredentials, sendData: ${bodyParameters.map((Parameter parameter) => parameter.name).first})''');
 
-                buffer.writeln(
-                    '.then((HttpRequest response) => response.responseText)');
-                if (nextPathPart.operation.responseContentType ==
-                    'application/json') {
-                  buffer.writeln(
-                      '.then((String data) => data != null ? convert(JSON.decode(data) as S) : null)');
-                }
-
                 buffer.writeln(' : ');
                 buffer.writeln(
                     ''' HttpRequest.request($url, method: '${nextPathPart.operation.name.toUpperCase()}', withCredentials: $withCredentials ''');
