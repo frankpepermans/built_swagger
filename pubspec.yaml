@@ -5,8 +5,7 @@ version: 0.1.9
 #author: Frank <email@example.com>
 
 environment:
-  sdk: '>=1.20.1 <2.0.0'
+  sdk: '>=2.0.0-dev.51.0 <2.0.0'
 
 dependencies:
   http: ^0.11.0
-  source_gen: '>=0.5.0 <0.6.0'
