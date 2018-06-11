@@ -390,7 +390,7 @@ class SwaggerGenerator extends Generator {
                   .group(1);
 
               buffer.writeln(
-                  '.then((request) => request, onError: $runOnErrorMethod(request))');
+                  '.then((HttpRequest request) => request, onError: $runOnErrorMethod(request))');
             }
 
             middlewareAnnotations.forEach((ElementAnnotation annotation) {

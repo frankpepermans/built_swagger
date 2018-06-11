@@ -1,8 +1,8 @@
 name: built_swagger
-description: A starting point for Dart libraries or applications.
+description: Codegen from swagger apis.
 version: 0.1.9
 #homepage: https://www.example.com
-#author: Frank <email@example.com>
+author: Frank <frank@igindo.com>
 
 environment:
   sdk: '>=2.0.0-dev.51.0 <2.0.0'
