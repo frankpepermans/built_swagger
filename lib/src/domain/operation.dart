@@ -6,7 +6,7 @@ class Operation {
   final String path;
   final String description;
   final String requestContentType, responseContentType;
-  final List<String> parentResources;
+  final List<dynamic> parentResources;
   final Iterable<Parameter> parameters;
 
   Operation(
@@ -14,10 +14,10 @@ class Operation {
       : this.parentResources = data['tags'],
         this.method = data['operationId'],
         this.requestContentType = data.containsKey('consumes')
-            ? (data['consumes'] as List<String>).first
+            ? (data['consumes'] as List<dynamic>).first
             : 'application/json',
         this.responseContentType = data.containsKey('produces')
-            ? (data['produces'] as List<String>).first
+            ? (data['produces'] as List<dynamic>).first
             : 'application/json',
         this.parameters = _toParameters(path, data['parameters']) {
     //print(this.parentResources);
@@ -28,7 +28,7 @@ class Operation {
   }
 
   static Iterable<Parameter> _toParameters(
-      final String path, final List<Map<String, dynamic>> raw) {
+      final String path, final List<dynamic> raw) {
     if (raw == null) return <Parameter>[];
 
     final List<Parameter> pathParameters = new RegExp(r'{([^}]+)}')
@@ -38,7 +38,7 @@ class Operation {
         .toList(growable: false);
 
     final List<Parameter> otherParameters = raw
-        .map((Map<String, dynamic> raw) => new Parameter(
+        .map((dynamic raw) => new Parameter(
             raw['name'],
             raw['required'] == 'true',
             raw['in'],

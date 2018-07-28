@@ -5,20 +5,21 @@ import 'package:built_swagger/src/domain/operation.dart';
 class Blueprint {
   final List<Bundle> bundles;
 
-  Blueprint(List<Map<String, String>> tags,
-      Map<String, Map<String, Map<String, dynamic>>> paths)
+  Blueprint(List<dynamic> tags,
+      Map<dynamic, dynamic> paths)
       : this.bundles = tags
+            .map((dynamic tag) => new Map<String, String>.from(tag))
             .map((Map<String, String> tag) => tag['name'])
             .map((String name) => new Bundle(name))
             .toList(growable: false) {
     _extractPaths(paths);
   }
 
-  void _extractPaths(Map<String, Map<String, Map<String, dynamic>>> pathsRaw) {
-    pathsRaw.forEach((String pathName, Map<String, Map<String, dynamic>> body) {
+  void _extractPaths(Map<dynamic, dynamic> pathsRaw) {
+    pathsRaw.forEach((dynamic pathName, dynamic body) {
       List<Operation> operations = <Operation>[];
 
-      body.forEach((String operation, Map<String, dynamic> data) {
+      body.forEach((dynamic operation, dynamic data) {
         operations
             .add(new Operation(operation, pathName, data['description'], data));
       });
@@ -26,7 +27,7 @@ class Blueprint {
       Path path = new Path(pathName, operations);
       Set<String> relatedResources = new Set.from(path.operations
           .map((Operation operation) => operation.parentResources)
-          .expand((List<String> resources) => resources));
+          .expand((List<dynamic> resources) => resources));
       Iterable<Bundle> relatedBundles = bundles
           .where((Bundle bundle) => relatedResources.contains(bundle.name));
 

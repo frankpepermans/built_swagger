@@ -9,7 +9,7 @@ class SwaggerService {
   Future<Blueprint> fetchDocumentation(final String url) async => http
       .get(url)
       .then((http.Response response) => response.body)
-      .then((String body) => json.decode(body) as Map<String, dynamic>)
+      .then((String body) => new Map<String, dynamic>.from(json.decode(body)))
       .then((Map<String, dynamic> raw) =>
           new Blueprint(raw['tags'], raw['paths']));
 }
