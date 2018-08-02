@@ -5,14 +5,14 @@ version: 0.1.9
 author: Frank <frank@igindo.com>
 
 environment:
-  sdk: '>=2.0.0-dev.51.0 <2.0.0'
+  sdk: '>=2.0.0-dev.62.0 <3.0.0'
 
 dependencies:
   http: ^0.11.0
 
 dev_dependencies:
-  build: ^0.12.0
-  source_gen: ^0.8.0
-  build_runner: ^0.8.7
-  build_test: ^0.10.0
-  build_web_compilers: ^0.3.7
+  build: ^0.12.7
+  source_gen: ^0.8.3
+  build_runner: ^0.9.2
+  build_test: ^0.10.3
+  build_web_compilers: ^0.4.1
