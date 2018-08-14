@@ -151,7 +151,7 @@ class SwaggerGenerator extends Generator {
                 .where((Parameter parameter) => parameter.values != null)
                 .forEach((Parameter parameter) => enumMap.putIfAbsent(
                 '${className}_${parameter.name}',
-                    () => parameter.values['enum']));
+                    () => parameter.values['enum']?.cast<String>()));
 
             if (nextPathPart.operation.responseContentType ==
                 'application/json') {
