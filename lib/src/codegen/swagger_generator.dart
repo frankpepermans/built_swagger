@@ -70,7 +70,7 @@ class SwaggerGenerator extends Generator {
       buffer.writeln('''import 'package:$parentLib$parentPath';''');
 
       buffer.writeln(
-          'const List<Type> remoteServices = const <Type>[${data.bundles.map(_bundleNameToClassName).join(',')}];');
+          'const List<Type> remoteServices = [${data.bundles.map(_bundleNameToClassName).join(',')}];');
 
       data.bundles.forEach((Bundle bundle) {
         final String bundleClassName = _bundleNameToClassName(bundle);
@@ -267,7 +267,8 @@ class SwaggerGenerator extends Generator {
                 .firstMatch(urlFactoryAnnotation.toSource())
                 .group(1);
 
-            buffer.write(
+            buffer.writeln('// ignore: omit_local_variable_types');
+            buffer.writeln(
                 'final Future<HttpRequest> Function(Map<String, String>) request = (Map<String, String> extraHeaders) async { ');
 
             if (headersFactoryAnnotation != null) {
@@ -277,19 +278,19 @@ class SwaggerGenerator extends Generator {
                   .group(1);
 
               buffer.writeln(
-                  'final Map<String, String> headers = await $createHeadersMethod();');
+                  'final headers = await $createHeadersMethod();');
               buffer.writeln(
                   "headers['Content-Type'] = '${nextPathPart.operation.requestContentType}';");
             } else {
               buffer.writeln(
-                  "final Map<String, String> headers = <String, String>{'Content-Type':'${nextPathPart.operation.requestContentType}'};");
+                  "final headers = {'Content-Type':'${nextPathPart.operation.requestContentType}'};");
             }
 
             buffer.writeln('headers.addAll(extraHeaders);');
 
             buffer.writeln('return $createUrlMethod()');
 
-            buffer.writeln('.then((String url) => ');
+            buffer.writeln('.then((url) => ');
 
             if (nextPathPart.operation.requestContentType.toLowerCase() ==
                 'multipart/form-data' &&
@@ -390,7 +391,7 @@ class SwaggerGenerator extends Generator {
                   .group(1);
 
               buffer.writeln(
-                  '.then((HttpRequest request) => request, onError: $runOnErrorMethod(request))');
+                  '.then((request) => request, onError: $runOnErrorMethod(request))');
             }
 
             middlewareAnnotations.forEach((ElementAnnotation annotation) {
@@ -415,12 +416,12 @@ class SwaggerGenerator extends Generator {
             });
 
             buffer.writeln(
-                '.then((HttpRequest request) => request?.responseText)');
+                '.then((request) => request?.responseText)');
 
             if (nextPathPart.operation.responseContentType ==
                 'application/json') {
               buffer.writeln(
-                  '.then((String data) => data != null ? convert(json.decode(data) as S) : null);');
+                  '.then((data) => data != null ? convert(json.decode(data) as S) : null);');
             } else {
               buffer.writeln(';');
             }
@@ -454,9 +455,12 @@ class SwaggerGenerator extends Generator {
 
       return buffer.toString();
     }
+
+    return null;
   }
 
   String _toReturnType(String className, Parameter parameter) {
+    if (parameter.returnType == 'Map') return 'Map<String, dynamic>';
     if (parameter.values == null) return parameter.returnType;
 
     return '${parameter.returnType}<${className}_${parameter.name}>';

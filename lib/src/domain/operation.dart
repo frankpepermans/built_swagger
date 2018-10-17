@@ -38,13 +38,25 @@ class Operation {
         .toList(growable: false);
 
     final List<Parameter> otherParameters = raw
-        .map((dynamic raw) => new Parameter(
-            raw['name'],
-            raw['required'] == 'true',
-            raw['in'],
-            raw['type'],
-            raw['items'],
-            raw['collectionFormat']))
+        .map((dynamic raw) {
+          String type;
+
+          if (raw is Map) {
+            if (raw.containsKey('type')) {
+              type = raw['type'];
+            } else if (raw.containsKey('items')) {
+              type = raw['items']['type'];
+            }
+          }
+
+          return new Parameter(
+              raw['name'],
+              raw['required'] == 'true',
+              raw['in'],
+              type,
+              raw['items'],
+              raw['collectionFormat']);
+    })
         .toList(growable: false);
 
     return new List<Parameter>.from(pathParameters)

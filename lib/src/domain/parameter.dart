@@ -26,6 +26,8 @@ class Parameter {
         return 'FormData';
       case 'blob':
         return 'Blob';
+      case 'object':
+        return 'Map';
       default:
         return 'dynamic/*$incomingType*/';
     }
