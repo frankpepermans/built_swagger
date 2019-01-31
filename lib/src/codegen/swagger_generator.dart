@@ -14,47 +14,38 @@ import 'package:built_swagger/src/domain/parameter.dart';
 class SwaggerGenerator extends Generator {
   @override
   FutureOr<String> generate(LibraryReader library, BuildStep buildStep) async {
-    final ClassElement element = library.allElements.firstWhere(
-            (Element element) =>
+    final element = library.allElements.firstWhere(
+        (Element element) =>
             element.location.components.first.contains(buildStep.inputId.path),
-        orElse: () => null) as ClassElement;
+        orElse: () => null);
 
     if (element == null) return null;
 
-    final ElementAnnotation remoteAnnotation = element.metadata.firstWhere(
-            (ElementAnnotation annotation) =>
-            annotation.toSource().contains('@Remote('),
+    final remoteAnnotation = element.metadata.firstWhere(
+        (annotation) => annotation.toSource().contains('@Remote('),
         orElse: () => null);
-    final ElementAnnotation useCredentialsAnnotation = element.metadata
-        .firstWhere(
-            (ElementAnnotation annotation) =>
-            annotation.toSource().contains('@UseCredentials('),
+    final useCredentialsAnnotation = element.metadata.firstWhere(
+        (annotation) => annotation.toSource().contains('@UseCredentials('),
         orElse: () => null);
-    final ElementAnnotation urlFactoryAnnotation = element.metadata
-        .firstWhere(
-            (ElementAnnotation annotation) =>
-            annotation.toSource().contains('@UrlFactory('),
+    final urlFactoryAnnotation = element.metadata.firstWhere(
+        (annotation) => annotation.toSource().contains('@UrlFactory('),
         orElse: () => null);
-    final ElementAnnotation headersFactoryAnnotation = element.metadata
-        .firstWhere(
-            (ElementAnnotation annotation) =>
-            annotation.toSource().contains('@HeadersFactory('),
+    final headersFactoryAnnotation = element.metadata.firstWhere(
+        (annotation) => annotation.toSource().contains('@HeadersFactory('),
         orElse: () => null);
 
-    final Iterable<ElementAnnotation> middlewareAnnotations = element.metadata
-        .where((ElementAnnotation annotation) =>
-        annotation.toSource().contains('@Middleware('));
+    final middlewareAnnotations = element.metadata
+        .where((annotation) => annotation.toSource().contains('@Middleware('));
 
     if (remoteAnnotation != null) {
-      final String swaggerUrl = new RegExp(r"@Remote\('([^']+)'\)")
+      final swaggerUrl = new RegExp(r"@Remote\('([^']+)'\)")
           .firstMatch(remoteAnnotation.toSource())
           .group(1);
-      final StringBuffer buffer = new StringBuffer();
-      final SwaggerService service = new SwaggerService();
-      final Blueprint data = await service.fetchDocumentation(swaggerUrl);
-      final Set<_PathPart> buildList = new Set<_PathPart>(),
-          flatList = new Set<_PathPart>();
-      int classIndex = 0;
+      final buffer = new StringBuffer();
+      final service = const SwaggerService();
+      final data = await service.fetchDocumentation(swaggerUrl);
+      final buildList = new Set<_PathPart>(), flatList = new Set<_PathPart>();
+      var classIndex = 0;
 
       buffer.writeln('''import 'dart:async';''');
       buffer.writeln('''import 'dart:convert' show json;''');
@@ -62,19 +53,19 @@ class SwaggerGenerator extends Generator {
       buffer.writeln(
           '''import 'package:angular/angular.dart' show Injectable, Inject;''');
 
-      final String parentLib =
-      new RegExp(r'[^|]+').firstMatch(element.source.fullName).group(0);
-      final String parentPath =
-      new RegExp(r'\/.+').firstMatch(element.source.fullName).group(0);
+      final parentLib =
+          new RegExp(r'[^|]+').firstMatch(element.source.fullName).group(0);
+      final parentPath =
+          new RegExp(r'\/.+').firstMatch(element.source.fullName).group(0);
 
       buffer.writeln('''import 'package:$parentLib$parentPath';''');
 
       buffer.writeln(
           'const List<Type> remoteServices = [${data.bundles.map(_bundleNameToClassName).join(',')}];');
 
-      data.bundles.forEach((Bundle bundle) {
-        final String bundleClassName = _bundleNameToClassName(bundle);
-        final Set<_PathPart> bundleList = new Set<_PathPart>();
+      data.bundles.forEach((bundle) {
+        final bundleClassName = _bundleNameToClassName(bundle);
+        final bundleList = new Set<_PathPart>();
 
         buffer.writeln('@Injectable()');
         buffer.writeln('class $bundleClassName {');
@@ -82,20 +73,19 @@ class SwaggerGenerator extends Generator {
         buffer.writeln();
         buffer.writeln('const $bundleClassName();');
 
-        bundle.paths.forEach((Path path) {
-          path.operations.forEach((Operation operation) {
-            List<String> pathList = _pathToMethodName(path, operation);
-            Set<_PathPart> currentBuildList = buildList;
-            int loopIndex = 0;
+        bundle.paths.forEach((path) {
+          path.operations.forEach((operation) {
+            var pathList = _pathToMethodName(path, operation);
+            var currentBuildList = buildList;
+            var loopIndex = 0;
 
-            pathList.forEach((String segment) {
+            pathList.forEach((segment) {
               segment = segment == 'new' ? 'create' : segment;
 
               _PathPart pathPart = currentBuildList.firstWhere(
-                      (_PathPart pathPart) =>
-                  pathPart.segment.compareTo(segment) == 0,
+                  (pathPart) => pathPart.segment.compareTo(segment) == 0,
                   orElse: () =>
-                  new _PathPart(segment, operation, ++classIndex));
+                      new _PathPart(segment, operation, ++classIndex));
 
               currentBuildList.add(pathPart);
               if (loopIndex < pathList.length - 1) flatList.add(pathPart);
@@ -113,7 +103,7 @@ class SwaggerGenerator extends Generator {
           });
         });
 
-        bundleList.forEach((_PathPart pathPart) {
+        bundleList.forEach((pathPart) {
           String className =
               '_${pathPart.segment[0].toUpperCase()}${pathPart.segment.substring(1)}${pathPart.classIndex}';
 
@@ -124,18 +114,18 @@ class SwaggerGenerator extends Generator {
         buffer.writeln('}');
       });
 
-      flatList.forEach((_PathPart pathPart) {
-        Map<String, List<String>> enumMap = <String, List<String>>{};
-        String className =
+      flatList.forEach((pathPart) {
+        var enumMap = <String, List<String>>{};
+        var className =
             '_${pathPart.segment[0].toUpperCase()}${pathPart.segment.substring(1)}${pathPart.classIndex}';
 
         buffer.writeln('class $className {');
 
         buffer.writeln('const $className();');
 
-        pathPart.next.forEach((_PathPart nextPathPart) {
+        pathPart.next.forEach((nextPathPart) {
           if (nextPathPart.next.isNotEmpty) {
-            String className =
+            var className =
                 '_${nextPathPart.segment[0].toUpperCase()}${nextPathPart.segment.substring(1)}${nextPathPart.classIndex}';
 
             buffer.writeln(
@@ -148,9 +138,9 @@ class SwaggerGenerator extends Generator {
             }
 
             nextPathPart.operation.parameters
-                .where((Parameter parameter) => parameter.values != null)
-                .forEach((Parameter parameter) => enumMap.putIfAbsent(
-                '${className}_${parameter.name}',
+                .where((parameter) => parameter.values != null)
+                .forEach((parameter) => enumMap.putIfAbsent(
+                    '${className}_${parameter.name}',
                     () => parameter.values['enum']?.cast<String>()));
 
             if (nextPathPart.operation.responseContentType ==
@@ -160,12 +150,11 @@ class SwaggerGenerator extends Generator {
               buffer.writeln('Future<String> ${nextPathPart.segment}(');
             }
 
-            List<Parameter> pathParameters = nextPathPart.operation.parameters
-                .where((Parameter parameter) => parameter.location == 'path')
+            var pathParameters = nextPathPart.operation.parameters
+                .where((parameter) => parameter.location == 'path')
                 .toList(growable: false);
-            List<Parameter> otherParameters = nextPathPart
-                .operation.parameters
-                .where((Parameter parameter) => parameter.location != 'path')
+            var otherParameters = nextPathPart.operation.parameters
+                .where((parameter) => parameter.location != 'path')
                 .toList(growable: true);
 
             if (nextPathPart.operation.responseContentType ==
@@ -174,8 +163,8 @@ class SwaggerGenerator extends Generator {
             }
 
             buffer.writeln(pathParameters
-                .map((Parameter parameter) =>
-            'final ${_toReturnType(className, parameter)} ${parameter.name}')
+                .map((parameter) =>
+                    'final ${_toReturnType(className, parameter)} ${parameter.name}')
                 .join(','));
 
             if (pathParameters.isNotEmpty && otherParameters.isNotEmpty)
@@ -183,7 +172,7 @@ class SwaggerGenerator extends Generator {
 
             if (otherParameters.isNotEmpty) buffer.writeln('{');
 
-            buffer.writeln(otherParameters.map((Parameter parameter) {
+            buffer.writeln(otherParameters.map((parameter) {
               if (parameter == null) {
                 return 'T convert(S data)';
               } else if (parameter.isRequired) {
@@ -202,34 +191,30 @@ class SwaggerGenerator extends Generator {
               buffer.writeln('convert ??= (dynamic data) => data as T;');
             }
 
-            final List<Parameter> extraPathParameters =
-            new List<Parameter>.from(pathParameters);
+            final extraPathParameters =
+                new List<Parameter>.from(pathParameters);
 
             new RegExp(r'{([^}]+)}')
                 .allMatches(nextPathPart.operation.path)
-                .map((Match match) => match.group(1))
-                .forEach((String pathParam) =>
-                extraPathParameters.removeWhere((Parameter parameter) =>
-                parameter.name == pathParam));
+                .map((match) => match.group(1))
+                .forEach((pathParam) => extraPathParameters
+                    .removeWhere((parameter) => parameter.name == pathParam));
 
-            String url =
-                "'\$url${nextPathPart.operation.path.replaceAllMapped(
-                new RegExp(r'{([^}]+)}'), (Match match) => '\$${match.group(1)}')}";
+            var url =
+                "'\$url${nextPathPart.operation.path.replaceAllMapped(new RegExp(r'{([^}]+)}'), (Match match) => '\$${match.group(1)}')}";
 
             if (extraPathParameters.isNotEmpty) {
               url +=
-              '/${extraPathParameters.map((Parameter parameter) => '\$${parameter.name}').join('/')}';
+                  '/${extraPathParameters.map((parameter) => '\$${parameter.name}').join('/')}';
             }
 
-            final List<Parameter> queryParameters = nextPathPart
-                .operation.parameters
-                .where((Parameter parameter) => parameter.location == 'query')
+            final queryParameters = nextPathPart.operation.parameters
+                .where((parameter) => parameter.location == 'query')
                 .toList(growable: false);
-            final List<Parameter> bodyParameters = nextPathPart
-                .operation.parameters
-                .where((Parameter parameter) =>
-            parameter.location == 'body' ||
-                parameter.location == 'formData')
+            final bodyParameters = nextPathPart.operation.parameters
+                .where((parameter) =>
+                    parameter.location == 'body' ||
+                    parameter.location == 'formData')
                 .toList(growable: false);
 
             if (queryParameters.isNotEmpty)
@@ -245,40 +230,37 @@ class SwaggerGenerator extends Generator {
 
             final withCredentials = (useCredentialsAnnotation != null);
 
-            middlewareAnnotations.forEach((ElementAnnotation annotation) {
-              final String method =
-              new RegExp(r"@Middleware\((\w+), RunOn.(\w+)\)")
+            middlewareAnnotations.forEach((annotation) {
+              final method = new RegExp(r"@Middleware\((\w+), RunOn.(\w+)\)")
                   .firstMatch(annotation.toSource())
                   .group(1);
 
-              final String event =
-              new RegExp(r"@Middleware\((\w+), RunOn.(\w+)\)")
+              final event = new RegExp(r"@Middleware\((\w+), RunOn.(\w+)\)")
                   .firstMatch(annotation.toSource())
                   .group(2);
 
               if (event == 'LOGGING') {
                 buffer.writeln(
-                    '''$method(<String, dynamic>{'path': '${nextPathPart.operation.path}', 'operation': '${nextPathPart.operation.name}', 'remoteMethodName': '${nextPathPart.operation.method}', 'parameters': <String, dynamic>{${nextPathPart.operation.parameters.map((Parameter parameter) => "'${parameter.name}':'\$${parameter.name}'").join(',')}}});''');
+                    '''$method({'path': '${nextPathPart.operation.path}', 'operation': '${nextPathPart.operation.name}', 'remoteMethodName': '${nextPathPart.operation.method}', 'parameters': {${nextPathPart.operation.parameters.map((Parameter parameter) => "'${parameter.name}':'\$${parameter.name}'").join(',')}}});''');
               }
             });
 
             final String createUrlMethod =
-            new RegExp(r"@UrlFactory\(([^\)]+)\)")
-                .firstMatch(urlFactoryAnnotation.toSource())
-                .group(1);
+                new RegExp(r"@UrlFactory\(([^\)]+)\)")
+                    .firstMatch(urlFactoryAnnotation.toSource())
+                    .group(1);
 
             buffer.writeln('// ignore: omit_local_variable_types');
             buffer.writeln(
-                'final Future<HttpRequest> Function(Map<String, String>) request = (Map<String, String> extraHeaders) async { ');
+                'final request = (Map<String, String> extraHeaders) async { ');
 
             if (headersFactoryAnnotation != null) {
               final String createHeadersMethod =
-              new RegExp(r"@HeadersFactory\(([^\)]+)\)")
-                  .firstMatch(headersFactoryAnnotation.toSource())
-                  .group(1);
+                  new RegExp(r"@HeadersFactory\(([^\)]+)\)")
+                      .firstMatch(headersFactoryAnnotation.toSource())
+                      .group(1);
 
-              buffer.writeln(
-                  'final headers = await $createHeadersMethod();');
+              buffer.writeln('final headers = await $createHeadersMethod();');
               buffer.writeln(
                   "headers['Content-Type'] = '${nextPathPart.operation.requestContentType}';");
             } else {
@@ -293,11 +275,10 @@ class SwaggerGenerator extends Generator {
             buffer.writeln('.then((url) => ');
 
             if (nextPathPart.operation.requestContentType.toLowerCase() ==
-                'multipart/form-data' &&
+                    'multipart/form-data' &&
                 bodyParameters.isNotEmpty) {
-              final String bodyData = bodyParameters
-                  .map((Parameter parameter) => parameter.name)
-                  .first;
+              final bodyData =
+                  bodyParameters.map((parameter) => parameter.name).first;
 
               buffer.writeln('$bodyData != null ? ');
 
@@ -313,8 +294,9 @@ class SwaggerGenerator extends Generator {
             }
 
             if (nextPathPart.operation.requestContentType.toLowerCase() ==
-                'multipart/form-data' &&
-                bodyParameters.isNotEmpty) {} else {
+                    'multipart/form-data' &&
+                bodyParameters.isNotEmpty) {
+            } else {
               buffer.writeln(", requestHeaders: headers");
             }
 
@@ -333,75 +315,72 @@ class SwaggerGenerator extends Generator {
             buffer.writeln('));};');
             buffer.writeln('return request(const <String, String>{})');
 
-            final ElementAnnotation runOnStatus =
-            middlewareAnnotations.firstWhere(
-                    (ElementAnnotation annotation) =>
-                new RegExp(r"@Middleware\((\w+), RunOn.(\w+)\)")
-                    .firstMatch(annotation.toSource())
-                    .group(2) ==
-                    'RETRY_ON_STATUS',
-                orElse: () => null),
+            final runOnStatus = middlewareAnnotations.firstWhere(
+                    (annotation) =>
+                        new RegExp(r"@Middleware\((\w+), RunOn.(\w+)\)")
+                            .firstMatch(annotation.toSource())
+                            .group(2) ==
+                        'RETRY_ON_STATUS',
+                    orElse: () => null),
                 runOnError = middlewareAnnotations.firstWhere(
-                        (ElementAnnotation annotation) =>
-                    new RegExp(r"@Middleware\((\w+), RunOn.(\w+)\)")
-                        .firstMatch(annotation.toSource())
-                        .group(2) ==
+                    (annotation) =>
+                        new RegExp(r"@Middleware\((\w+), RunOn.(\w+)\)")
+                            .firstMatch(annotation.toSource())
+                            .group(2) ==
                         'RETRY_ON_ERROR',
-                    orElse: () => null), requestHandler = middlewareAnnotations.firstWhere(
-                    (ElementAnnotation annotation) =>
-                new RegExp(r"@Middleware\((\w+), RunOn.(\w+)\)")
-                    .firstMatch(annotation.toSource())
-                    .group(2) ==
-                    'REQUEST_HANDLER',
-                orElse: () => null);
+                    orElse: () => null),
+                requestHandler = middlewareAnnotations.firstWhere(
+                    (annotation) =>
+                        new RegExp(r"@Middleware\((\w+), RunOn.(\w+)\)")
+                            .firstMatch(annotation.toSource())
+                            .group(2) ==
+                        'REQUEST_HANDLER',
+                    orElse: () => null);
 
             if (requestHandler != null) {
-              final String requestHandlerMethod =
-              new RegExp(r"@Middleware\((\w+), RunOn.(\w+)\)")
-                  .firstMatch(requestHandler.toSource())
-                  .group(1);
+              final requestHandlerMethod =
+                  new RegExp(r"@Middleware\((\w+), RunOn.(\w+)\)")
+                      .firstMatch(requestHandler.toSource())
+                      .group(1);
 
-              buffer.writeln(
-                  '.then($requestHandlerMethod)');
+              buffer.writeln('.then($requestHandlerMethod)');
             }
 
             if (runOnStatus != null && runOnError != null) {
-              final String runOnStatusMethod =
-              new RegExp(r"@Middleware\((\w+), RunOn.(\w+)\)")
-                  .firstMatch(runOnStatus.toSource())
-                  .group(1),
+              final runOnStatusMethod =
+                      new RegExp(r"@Middleware\((\w+), RunOn.(\w+)\)")
+                          .firstMatch(runOnStatus.toSource())
+                          .group(1),
                   runOnErrorMethod =
-                  new RegExp(r"@Middleware\((\w+), RunOn.(\w+)\)")
-                      .firstMatch(runOnError.toSource())
-                      .group(1);
+                      new RegExp(r"@Middleware\((\w+), RunOn.(\w+)\)")
+                          .firstMatch(runOnError.toSource())
+                          .group(1);
 
               buffer.writeln(
                   '.then($runOnStatusMethod(request), onError: $runOnErrorMethod(request))');
             } else if (runOnStatus != null) {
-              final String runOnStatusMethod =
-              new RegExp(r"@Middleware\((\w+), RunOn.(\w+)\)")
-                  .firstMatch(runOnStatus.toSource())
-                  .group(1);
+              final runOnStatusMethod =
+                  new RegExp(r"@Middleware\((\w+), RunOn.(\w+)\)")
+                      .firstMatch(runOnStatus.toSource())
+                      .group(1);
 
               buffer.writeln('.then($runOnStatusMethod(request))');
             } else if (runOnError != null) {
-              final String runOnErrorMethod =
-              new RegExp(r"@Middleware\((\w+), RunOn.(\w+)\)")
-                  .firstMatch(runOnError.toSource())
-                  .group(1);
+              final runOnErrorMethod =
+                  new RegExp(r"@Middleware\((\w+), RunOn.(\w+)\)")
+                      .firstMatch(runOnError.toSource())
+                      .group(1);
 
               buffer.writeln(
                   '.then((request) => request, onError: $runOnErrorMethod(request))');
             }
 
             middlewareAnnotations.forEach((ElementAnnotation annotation) {
-              final String method =
-              new RegExp(r"@Middleware\((\w+), RunOn.(\w+)\)")
+              final method = new RegExp(r"@Middleware\((\w+), RunOn.(\w+)\)")
                   .firstMatch(annotation.toSource())
                   .group(1);
 
-              final String event =
-              new RegExp(r"@Middleware\((\w+), RunOn.(\w+)\)")
+              final event = new RegExp(r"@Middleware\((\w+), RunOn.(\w+)\)")
                   .firstMatch(annotation.toSource())
                   .group(2);
 
@@ -415,8 +394,7 @@ class SwaggerGenerator extends Generator {
               ].contains(event))) buffer.writeln('.then($method)');
             });
 
-            buffer.writeln(
-                '.then((request) => request?.responseText)');
+            buffer.writeln('.then((request) => request?.responseText)');
 
             if (nextPathPart.operation.responseContentType ==
                 'application/json') {
@@ -430,19 +408,19 @@ class SwaggerGenerator extends Generator {
           }
         });
 
-        enumMap.forEach((String K, List<String> V) {
-          buffer.writeln(
-              '$K get ${K.split('_').last}Enums => const $K._(null);');
+        enumMap.forEach((K, V) {
+          buffer
+              .writeln('$K get ${K.split('_').last}Enums => const $K._(null);');
         });
 
         buffer.writeln('}');
 
-        enumMap.forEach((String K, List<String> V) {
+        enumMap.forEach((K, V) {
           buffer.writeln('class $K {');
-          buffer.writeln('final String _value;');
+          buffer.writeln('final _value;');
           buffer.writeln('const $K._(this._value);');
 
-          V?.forEach((String enumValue) {
+          V?.forEach((enumValue) {
             buffer.writeln("$K get $enumValue => const $K._('$enumValue');");
           });
 
@@ -467,19 +445,17 @@ class SwaggerGenerator extends Generator {
   }
 
   String _bundleNameToClassName(Bundle bundle) {
-    final String camelCased = bundle.name.replaceAllMapped(
-        new RegExp(r'-([\w]{1})'),
-        (Match match) => match.group(1).toUpperCase());
+    final camelCased = bundle.name.replaceAllMapped(
+        new RegExp(r'-([\w]{1})'), (match) => match.group(1).toUpperCase());
 
     return 'Taurus${camelCased[0].toUpperCase()}${camelCased.substring(1)}Service';
   }
 
   List<String> _pathToMethodName(Path path, Operation operation) {
-    final List<String> parts = path.name.split('/');
+    final parts = path.name.split('/');
 
-    List<String> transformed = parts
-        .where((String segment) => segment.isNotEmpty)
-        .map((String segment) {
+    var transformed =
+        parts.where((segment) => segment.isNotEmpty).map((segment) {
       if (segment[0] == '{') {
         String unwrapped = segment.substring(1, segment.length - 1);
 

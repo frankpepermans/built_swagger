@@ -6,6 +6,8 @@ import 'package:http/http.dart' as http;
 import 'package:built_swagger/src/domain/blueprint.dart';
 
 class SwaggerService {
+  const SwaggerService();
+
   Future<Blueprint> fetchDocumentation(final String url) async => http
       .get(url)
       .then((http.Response response) => response.body)
