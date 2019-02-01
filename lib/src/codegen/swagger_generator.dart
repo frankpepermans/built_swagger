@@ -252,7 +252,7 @@ class SwaggerGenerator extends Generator {
 
             buffer.writeln('// ignore: omit_local_variable_types');
             buffer.writeln(
-                'final request = (Map<String, String> extraHeaders) async { ');
+                'final Future<HttpRequest> Function(Map<String, String>) request = (Map<String, String> extraHeaders) async { ');
 
             if (headersFactoryAnnotation != null) {
               final String createHeadersMethod =
