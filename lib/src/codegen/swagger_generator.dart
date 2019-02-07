@@ -221,9 +221,12 @@ class SwaggerGenerator extends Generator {
 
             if (queryParameters.isNotEmpty)
               url += '?${queryParameters.map((Parameter parameter) {
-                if (parameter.collectionFormat == 'multi' &&
-                    parameter.values.containsKey('enum')) {
-                  return '''\${${parameter.name}.map((${className}_${parameter.name} entry) => '${parameter.name}=\${entry.toJson()}').join('&')}''';
+                if (parameter.collectionFormat == 'multi') {
+                  if (parameter.values.containsKey('enum')) {
+                    return '''\${${parameter.name}.map((entry) => '${parameter.name}=\${entry.toJson()}').join('&')}''';
+                  }
+
+                  return '''\${${parameter.name}.map((entry) => '${parameter.name}=\${entry.toString()}').join('&')}''';
                 }
 
                 return '${parameter.name}=\$${parameter.name}';
