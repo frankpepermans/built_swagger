@@ -138,7 +138,9 @@ class SwaggerGenerator extends Generator {
             }
 
             nextPathPart.operation.parameters
-                .where((parameter) => parameter.values != null)
+                .where((parameter) =>
+                    parameter.values != null &&
+                    parameter.values.containsKey('enum'))
                 .forEach((parameter) => enumMap.putIfAbsent(
                     '${className}_${parameter.name}',
                     () => parameter.values['enum']?.cast<String>()));
@@ -219,7 +221,8 @@ class SwaggerGenerator extends Generator {
 
             if (queryParameters.isNotEmpty)
               url += '?${queryParameters.map((Parameter parameter) {
-                if (parameter.collectionFormat == 'multi') {
+                if (parameter.collectionFormat == 'multi' &&
+                    parameter.values.containsKey('enum')) {
                   return '''\${${parameter.name}.map((${className}_${parameter.name} entry) => '${parameter.name}=\${entry.toJson()}').join('&')}''';
                 }
 
@@ -440,6 +443,9 @@ class SwaggerGenerator extends Generator {
   String _toReturnType(String className, Parameter parameter) {
     if (parameter.returnType == 'Map') return 'Map<String, dynamic>';
     if (parameter.values == null) return parameter.returnType;
+
+    if (!parameter.values.containsKey('enum'))
+      return '${parameter.returnType}<${Parameter('', false, '', parameter.values['type'], {}, '').returnType}>';
 
     return '${parameter.returnType}<${className}_${parameter.name}>';
   }
