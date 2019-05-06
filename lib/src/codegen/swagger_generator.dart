@@ -5,13 +5,14 @@ import 'package:source_gen/source_gen.dart';
 import 'package:build/build.dart';
 
 import 'package:built_swagger/src/infrastructure/swagger_service.dart';
-import 'package:built_swagger/src/domain/blueprint.dart';
 import 'package:built_swagger/src/domain/bundle.dart';
 import 'package:built_swagger/src/domain/operation.dart';
 import 'package:built_swagger/src/domain/path.dart';
 import 'package:built_swagger/src/domain/parameter.dart';
 
 class SwaggerGenerator extends Generator {
+  final BuilderOptions options;
+
   @override
   FutureOr<String> generate(LibraryReader library, BuildStep buildStep) async {
     final element = library.allElements.firstWhere(
@@ -21,424 +22,336 @@ class SwaggerGenerator extends Generator {
 
     if (element == null) return null;
 
-    final remoteAnnotation = element.metadata.firstWhere(
-        (annotation) => annotation.toSource().contains('@Remote('),
-        orElse: () => null);
-    final useCredentialsAnnotation = element.metadata.firstWhere(
-        (annotation) => annotation.toSource().contains('@UseCredentials('),
-        orElse: () => null);
-    final urlFactoryAnnotation = element.metadata.firstWhere(
-        (annotation) => annotation.toSource().contains('@UrlFactory('),
-        orElse: () => null);
-    final headersFactoryAnnotation = element.metadata.firstWhere(
-        (annotation) => annotation.toSource().contains('@HeadersFactory('),
-        orElse: () => null);
+    final String endPoint = options.config['endPoint'];
+    print('swagger url: $endPoint');
+    final buffer = new StringBuffer();
+    final service = const SwaggerService();
+    final data = await service.fetchDocumentation(endPoint);
+    final buildList = new Set<_PathPart>(), flatList = new Set<_PathPart>();
+    var classIndex = 0;
 
-    final middlewareAnnotations = element.metadata
-        .where((annotation) => annotation.toSource().contains('@Middleware('));
+    buffer.writeln('''import 'dart:async';''');
+    buffer.writeln('''import 'dart:convert' show json;''');
+    buffer.writeln('''import 'dart:html' show FormData, HttpRequest;''');
+    buffer.writeln(
+        '''import 'package:angular/angular.dart' show Injectable, Inject;''');
 
-    if (remoteAnnotation != null) {
-      final swaggerUrl = new RegExp(r"@Remote\('([^']+)'\)")
-          .firstMatch(remoteAnnotation.toSource())
-          .group(1);
-      final buffer = new StringBuffer();
-      final service = const SwaggerService();
-      final data = await service.fetchDocumentation(swaggerUrl);
-      final buildList = new Set<_PathPart>(), flatList = new Set<_PathPart>();
-      var classIndex = 0;
+    final parentLib =
+        new RegExp(r'[^|]+').firstMatch(element.source.fullName).group(0);
+    final parentPath =
+        new RegExp(r'\/.+').firstMatch(element.source.fullName).group(0);
 
-      buffer.writeln('''import 'dart:async';''');
-      buffer.writeln('''import 'dart:convert' show json;''');
-      buffer.writeln('''import 'dart:html' show FormData, HttpRequest;''');
-      buffer.writeln(
-          '''import 'package:angular/angular.dart' show Injectable, Inject;''');
+    buffer.writeln('''import 'package:$parentLib$parentPath';''');
 
-      final parentLib =
-          new RegExp(r'[^|]+').firstMatch(element.source.fullName).group(0);
-      final parentPath =
-          new RegExp(r'\/.+').firstMatch(element.source.fullName).group(0);
+    buffer.writeln(
+        'const List<Type> remoteServices = [${data.bundles.map(_bundleNameToClassName).join(',')}];');
 
-      buffer.writeln('''import 'package:$parentLib$parentPath';''');
+    data.bundles.forEach((bundle) {
+      final bundleClassName = _bundleNameToClassName(bundle);
+      final bundleList = new Set<_PathPart>();
 
-      buffer.writeln(
-          'const List<Type> remoteServices = [${data.bundles.map(_bundleNameToClassName).join(',')}];');
+      buffer.writeln('@Injectable()');
+      buffer.writeln('class $bundleClassName {');
 
-      data.bundles.forEach((bundle) {
-        final bundleClassName = _bundleNameToClassName(bundle);
-        final bundleList = new Set<_PathPart>();
+      buffer.writeln();
+      buffer.writeln('const $bundleClassName();');
 
-        buffer.writeln('@Injectable()');
-        buffer.writeln('class $bundleClassName {');
+      bundle.paths.forEach((path) {
+        path.operations.forEach((operation) {
+          var pathList = _pathToMethodName(path, operation);
+          var currentBuildList = buildList;
+          var loopIndex = 0;
 
-        buffer.writeln();
-        buffer.writeln('const $bundleClassName();');
+          pathList.forEach((segment) {
+            segment = segment == 'new' ? 'create' : segment;
 
-        bundle.paths.forEach((path) {
-          path.operations.forEach((operation) {
-            var pathList = _pathToMethodName(path, operation);
-            var currentBuildList = buildList;
-            var loopIndex = 0;
+            _PathPart pathPart = currentBuildList.firstWhere(
+                (pathPart) => pathPart.segment.compareTo(segment) == 0,
+                orElse: () => new _PathPart(segment, operation, ++classIndex));
 
-            pathList.forEach((segment) {
-              segment = segment == 'new' ? 'create' : segment;
+            currentBuildList.add(pathPart);
+            if (loopIndex < pathList.length - 1) flatList.add(pathPart);
 
-              _PathPart pathPart = currentBuildList.firstWhere(
-                  (pathPart) => pathPart.segment.compareTo(segment) == 0,
-                  orElse: () =>
-                      new _PathPart(segment, operation, ++classIndex));
+            if (loopIndex == 0 && loopIndex < pathList.length - 1)
+              bundleList.add(pathPart);
 
-              currentBuildList.add(pathPart);
-              if (loopIndex < pathList.length - 1) flatList.add(pathPart);
+            currentBuildList = pathPart.next;
 
-              if (loopIndex == 0 && loopIndex < pathList.length - 1)
-                bundleList.add(pathPart);
+            if (!pathPart.hasOperation)
+              pathPart.hasOperation = loopIndex == pathList.length - 1;
 
-              currentBuildList = pathPart.next;
-
-              if (!pathPart.hasOperation)
-                pathPart.hasOperation = loopIndex == pathList.length - 1;
-
-              loopIndex++;
-            });
+            loopIndex++;
           });
         });
-
-        bundleList.forEach((pathPart) {
-          String className =
-              '_${pathPart.segment[0].toUpperCase()}${pathPart.segment.substring(1)}${pathPart.classIndex}';
-
-          buffer.writeln(
-              '$className get ${pathPart.segment} => const $className();');
-        });
-
-        buffer.writeln('}');
       });
 
-      flatList.forEach((pathPart) {
-        var enumMap = <String, List<String>>{};
-        var className =
+      bundleList.forEach((pathPart) {
+        String className =
             '_${pathPart.segment[0].toUpperCase()}${pathPart.segment.substring(1)}${pathPart.classIndex}';
 
-        buffer.writeln('class $className {');
-
-        buffer.writeln('const $className();');
-
-        pathPart.next.forEach((nextPathPart) {
-          if (nextPathPart.next.isNotEmpty) {
-            var className =
-                '_${nextPathPart.segment[0].toUpperCase()}${nextPathPart.segment.substring(1)}${nextPathPart.classIndex}';
-
-            buffer.writeln(
-                '$className get ${nextPathPart.segment} => const $className();');
-          }
-
-          if (nextPathPart.hasOperation) {
-            if (nextPathPart.operation.description != null) {
-              buffer.writeln('/// ${nextPathPart.operation.description}');
-            }
-
-            nextPathPart.operation.parameters
-                .where((parameter) =>
-                    parameter.values != null &&
-                    parameter.values.containsKey('enum'))
-                .forEach((parameter) => enumMap.putIfAbsent(
-                    '${className}_${parameter.name}',
-                    () => parameter.values['enum']?.cast<String>()));
-
-            if (nextPathPart.operation.responseContentType ==
-                'application/json') {
-              buffer.writeln('Future<T> ${nextPathPart.segment}<T, S>(');
-            } else {
-              buffer.writeln('Future<String> ${nextPathPart.segment}(');
-            }
-
-            var pathParameters = nextPathPart.operation.parameters
-                .where((parameter) => parameter.location == 'path')
-                .toList(growable: false);
-            var otherParameters = nextPathPart.operation.parameters
-                .where((parameter) => parameter.location != 'path')
-                .toList(growable: true);
-
-            if (nextPathPart.operation.responseContentType ==
-                'application/json') {
-              otherParameters.add(null);
-            }
-
-            buffer.writeln(pathParameters
-                .map((parameter) =>
-                    'final ${_toReturnType(className, parameter)} ${parameter.name}')
-                .join(','));
-
-            if (pathParameters.isNotEmpty && otherParameters.isNotEmpty)
-              buffer.writeln(',');
-
-            if (otherParameters.isNotEmpty) buffer.writeln('{');
-
-            buffer.writeln(otherParameters.map((parameter) {
-              if (parameter == null) {
-                return 'T convert(S data)';
-              } else if (parameter.isRequired) {
-                return '${_toReturnType(className, parameter)} ${parameter.name}';
-              }
-
-              return '${_toReturnType(className, parameter)} ${parameter.name}';
-            }).join(','));
-
-            if (otherParameters.isNotEmpty) buffer.writeln('}');
-
-            buffer.writeln(') async {');
-
-            if (nextPathPart.operation.responseContentType ==
-                'application/json') {
-              buffer.writeln('convert ??= (dynamic data) => data as T;');
-            }
-
-            final extraPathParameters =
-                new List<Parameter>.from(pathParameters);
-
-            new RegExp(r'{([^}]+)}')
-                .allMatches(nextPathPart.operation.path)
-                .map((match) => match.group(1))
-                .forEach((pathParam) => extraPathParameters
-                    .removeWhere((parameter) => parameter.name == pathParam));
-
-            var url =
-                "'\$url${nextPathPart.operation.path.replaceAllMapped(new RegExp(r'{([^}]+)}'), (Match match) => '\$${match.group(1)}')}";
-
-            if (extraPathParameters.isNotEmpty) {
-              url +=
-                  '/${extraPathParameters.map((parameter) => '\$${parameter.name}').join('/')}';
-            }
-
-            final queryParameters = nextPathPart.operation.parameters
-                .where((parameter) => parameter.location == 'query')
-                .toList(growable: false);
-            final bodyParameters = nextPathPart.operation.parameters
-                .where((parameter) =>
-                    parameter.location == 'body' ||
-                    parameter.location == 'formData')
-                .toList(growable: false);
-
-            if (queryParameters.isNotEmpty)
-              url += '?${queryParameters.map((Parameter parameter) {
-                if (parameter.collectionFormat == 'multi') {
-                  if (parameter.values.containsKey('enum')) {
-                    return '''\${${parameter.name}.map((entry) => '${parameter.name}=\${entry.toJson()}').join('&')}''';
-                  }
-
-                  return '''\${${parameter.name}.map((entry) => '${parameter.name}=\${entry.toString()}').join('&')}''';
-                }
-
-                return '${parameter.name}=\$${parameter.name}';
-              }).join('&')}';
-
-            url += "'";
-
-            final withCredentials = (useCredentialsAnnotation != null);
-
-            middlewareAnnotations.forEach((annotation) {
-              final method = new RegExp(r"@Middleware\((\w+), RunOn.(\w+)\)")
-                  .firstMatch(annotation.toSource())
-                  .group(1);
-
-              final event = new RegExp(r"@Middleware\((\w+), RunOn.(\w+)\)")
-                  .firstMatch(annotation.toSource())
-                  .group(2);
-
-              if (event == 'LOGGING') {
-                buffer.writeln(
-                    '''$method({'path': '${nextPathPart.operation.path}', 'operation': '${nextPathPart.operation.name}', 'remoteMethodName': '${nextPathPart.operation.method}', 'parameters': {${nextPathPart.operation.parameters.map((Parameter parameter) => "'${parameter.name}':'\$${parameter.name}'").join(',')}}});''');
-              }
-            });
-
-            final String createUrlMethod =
-                new RegExp(r"@UrlFactory\(([^\)]+)\)")
-                    .firstMatch(urlFactoryAnnotation.toSource())
-                    .group(1);
-
-            buffer.writeln('// ignore: omit_local_variable_types');
-            buffer.writeln(
-                'final Future<HttpRequest> Function(Map<String, String>) request = (Map<String, String> extraHeaders) async { ');
-
-            if (headersFactoryAnnotation != null) {
-              final String createHeadersMethod =
-                  new RegExp(r"@HeadersFactory\(([^\)]+)\)")
-                      .firstMatch(headersFactoryAnnotation.toSource())
-                      .group(1);
-
-              buffer.writeln('final headers = await $createHeadersMethod();');
-              buffer.writeln(
-                  "headers['Content-Type'] = '${nextPathPart.operation.requestContentType}';");
-            } else {
-              buffer.writeln(
-                  "final headers = {'Content-Type':'${nextPathPart.operation.requestContentType}'};");
-            }
-
-            buffer.writeln('headers.addAll(extraHeaders);');
-
-            buffer.writeln('return $createUrlMethod()');
-
-            buffer.writeln('.then((url) => ');
-
-            if (nextPathPart.operation.requestContentType.toLowerCase() ==
-                    'multipart/form-data' &&
-                bodyParameters.isNotEmpty) {
-              final bodyData =
-                  bodyParameters.map((parameter) => parameter.name).first;
-
-              buffer.writeln('$bodyData != null ? ');
-
-              buffer.writeln(
-                  '''HttpRequest.request($url, method: '${nextPathPart.operation.name.toUpperCase()}', withCredentials: $withCredentials, sendData: ${bodyParameters.map((Parameter parameter) => parameter.name).first})''');
-
-              buffer.writeln(' : ');
-              buffer.writeln(
-                  ''' HttpRequest.request($url, method: '${nextPathPart.operation.name.toUpperCase()}', withCredentials: $withCredentials ''');
-            } else {
-              buffer.writeln(
-                  ''' HttpRequest.request($url, method: '${nextPathPart.operation.name.toUpperCase()}', withCredentials: $withCredentials ''');
-            }
-
-            if (nextPathPart.operation.requestContentType.toLowerCase() ==
-                    'multipart/form-data' &&
-                bodyParameters.isNotEmpty) {
-            } else {
-              buffer.writeln(", requestHeaders: headers");
-            }
-
-            if (bodyParameters.isNotEmpty &&
-                nextPathPart.operation.name != 'get') {
-              if (nextPathPart.operation.requestContentType ==
-                  'application/json') {
-                buffer.writeln(
-                    ', sendData: json.encode(${bodyParameters.map((Parameter parameter) => parameter.name).first})');
-              } else {
-                buffer.writeln(
-                    ', sendData: ${bodyParameters.map((Parameter parameter) => parameter.name).first}');
-              }
-            }
-
-            buffer.writeln('));};');
-            buffer.writeln('return request(const <String, String>{})');
-
-            final runOnStatus = middlewareAnnotations.firstWhere(
-                    (annotation) =>
-                        new RegExp(r"@Middleware\((\w+), RunOn.(\w+)\)")
-                            .firstMatch(annotation.toSource())
-                            .group(2) ==
-                        'RETRY_ON_STATUS',
-                    orElse: () => null),
-                runOnError = middlewareAnnotations.firstWhere(
-                    (annotation) =>
-                        new RegExp(r"@Middleware\((\w+), RunOn.(\w+)\)")
-                            .firstMatch(annotation.toSource())
-                            .group(2) ==
-                        'RETRY_ON_ERROR',
-                    orElse: () => null),
-                requestHandler = middlewareAnnotations.firstWhere(
-                    (annotation) =>
-                        new RegExp(r"@Middleware\((\w+), RunOn.(\w+)\)")
-                            .firstMatch(annotation.toSource())
-                            .group(2) ==
-                        'REQUEST_HANDLER',
-                    orElse: () => null);
-
-            if (requestHandler != null) {
-              final requestHandlerMethod =
-                  new RegExp(r"@Middleware\((\w+), RunOn.(\w+)\)")
-                      .firstMatch(requestHandler.toSource())
-                      .group(1);
-
-              buffer.writeln('.then($requestHandlerMethod)');
-            }
-
-            if (runOnStatus != null && runOnError != null) {
-              final runOnStatusMethod =
-                      new RegExp(r"@Middleware\((\w+), RunOn.(\w+)\)")
-                          .firstMatch(runOnStatus.toSource())
-                          .group(1),
-                  runOnErrorMethod =
-                      new RegExp(r"@Middleware\((\w+), RunOn.(\w+)\)")
-                          .firstMatch(runOnError.toSource())
-                          .group(1);
-
-              buffer.writeln(
-                  '.then($runOnStatusMethod(request), onError: $runOnErrorMethod(request))');
-            } else if (runOnStatus != null) {
-              final runOnStatusMethod =
-                  new RegExp(r"@Middleware\((\w+), RunOn.(\w+)\)")
-                      .firstMatch(runOnStatus.toSource())
-                      .group(1);
-
-              buffer.writeln('.then($runOnStatusMethod(request))');
-            } else if (runOnError != null) {
-              final runOnErrorMethod =
-                  new RegExp(r"@Middleware\((\w+), RunOn.(\w+)\)")
-                      .firstMatch(runOnError.toSource())
-                      .group(1);
-
-              buffer.writeln(
-                  '.then((request) => request, onError: $runOnErrorMethod(request))');
-            }
-
-            middlewareAnnotations.forEach((ElementAnnotation annotation) {
-              final method = new RegExp(r"@Middleware\((\w+), RunOn.(\w+)\)")
-                  .firstMatch(annotation.toSource())
-                  .group(1);
-
-              final event = new RegExp(r"@Middleware\((\w+), RunOn.(\w+)\)")
-                  .firstMatch(annotation.toSource())
-                  .group(2);
-
-              if (event == 'ERROR')
-                buffer.writeln('.then($method, onError: (dynamic _) {})');
-              else if (!(const <String>[
-                'LOGGING',
-                'RETRY_ON_STATUS',
-                'RETRY_ON_ERROR',
-                'REQUEST_HANDLER'
-              ].contains(event))) buffer.writeln('.then($method)');
-            });
-
-            buffer.writeln('.then((request) => request?.responseText)');
-
-            if (nextPathPart.operation.responseContentType ==
-                'application/json') {
-              buffer.writeln(
-                  '.then((data) => data != null ? convert(json.decode(data) as S) : null);');
-            } else {
-              buffer.writeln(';');
-            }
-
-            buffer.writeln('}');
-          }
-        });
-
-        enumMap.forEach((K, V) {
-          buffer
-              .writeln('$K get ${K.split('_').last}Enums => const $K._(null);');
-        });
-
-        buffer.writeln('}');
-
-        enumMap.forEach((K, V) {
-          buffer.writeln('class $K {');
-          buffer.writeln('final _value;');
-          buffer.writeln('const $K._(this._value);');
-
-          V?.forEach((enumValue) {
-            buffer.writeln("$K get $enumValue => const $K._('$enumValue');");
-          });
-
-          buffer.writeln('@override String toString() => _value;');
-          buffer.writeln('String toJson() => _value;');
-
-          buffer.writeln('}');
-        });
+        buffer.writeln(
+            '$className get ${pathPart.segment} => const $className();');
       });
 
-      return buffer.toString();
-    }
+      buffer.writeln('}');
+    });
+
+    flatList.forEach((pathPart) {
+      var enumMap = <String, List<String>>{};
+      var className =
+          '_${pathPart.segment[0].toUpperCase()}${pathPart.segment.substring(1)}${pathPart.classIndex}';
+
+      buffer.writeln('class $className {');
+
+      buffer.writeln('const $className();');
+
+      pathPart.next.forEach((nextPathPart) {
+        if (nextPathPart.next.isNotEmpty) {
+          var className =
+              '_${nextPathPart.segment[0].toUpperCase()}${nextPathPart.segment.substring(1)}${nextPathPart.classIndex}';
+
+          buffer.writeln(
+              '$className get ${nextPathPart.segment} => const $className();');
+        }
+
+        if (nextPathPart.hasOperation) {
+          if (nextPathPart.operation.description != null) {
+            buffer.writeln('/// ${nextPathPart.operation.description}');
+          }
+
+          nextPathPart.operation.parameters
+              .where((parameter) =>
+                  parameter.values != null &&
+                  parameter.values.containsKey('enum'))
+              .forEach((parameter) => enumMap.putIfAbsent(
+                  '${className}_${parameter.name}',
+                  () => parameter.values['enum']?.cast<String>()));
+
+          if (nextPathPart.operation.responseContentType ==
+              'application/json') {
+            buffer.writeln('Future<T> ${nextPathPart.segment}<T, S>(');
+          } else {
+            buffer.writeln('Future<String> ${nextPathPart.segment}(');
+          }
+
+          var pathParameters = nextPathPart.operation.parameters
+              .where((parameter) => parameter.location == 'path')
+              .toList(growable: false);
+          var otherParameters = nextPathPart.operation.parameters
+              .where((parameter) => parameter.location != 'path')
+              .toList(growable: true);
+
+          if (nextPathPart.operation.responseContentType ==
+              'application/json') {
+            otherParameters.add(null);
+          }
+
+          buffer.writeln(pathParameters
+              .map((parameter) =>
+                  'final ${_toReturnType(className, parameter)} ${parameter.name}')
+              .join(','));
+
+          if (pathParameters.isNotEmpty && otherParameters.isNotEmpty)
+            buffer.writeln(',');
+
+          if (otherParameters.isNotEmpty) buffer.writeln('{');
+
+          buffer.writeln(otherParameters.map((parameter) {
+            if (parameter == null) {
+              return 'T convert(S data)';
+            } else if (parameter.isRequired) {
+              return '${_toReturnType(className, parameter)} ${parameter.name}';
+            }
+
+            return '${_toReturnType(className, parameter)} ${parameter.name}';
+          }).join(','));
+
+          if (otherParameters.isNotEmpty) buffer.writeln('}');
+
+          buffer.writeln(') async {');
+
+          if (nextPathPart.operation.responseContentType ==
+              'application/json') {
+            buffer.writeln('convert ??= (dynamic data) => data as T;');
+          }
+
+          final extraPathParameters = new List<Parameter>.from(pathParameters);
+
+          new RegExp(r'{([^}]+)}')
+              .allMatches(nextPathPart.operation.path)
+              .map((match) => match.group(1))
+              .forEach((pathParam) => extraPathParameters
+                  .removeWhere((parameter) => parameter.name == pathParam));
+
+          var url =
+              "'\$url${nextPathPart.operation.path.replaceAllMapped(new RegExp(r'{([^}]+)}'), (Match match) => '\$${match.group(1)}')}";
+
+          if (extraPathParameters.isNotEmpty) {
+            url +=
+                '/${extraPathParameters.map((parameter) => '\$${parameter.name}').join('/')}';
+          }
+
+          final queryParameters = nextPathPart.operation.parameters
+              .where((parameter) => parameter.location == 'query')
+              .toList(growable: false);
+          final bodyParameters = nextPathPart.operation.parameters
+              .where((parameter) =>
+                  parameter.location == 'body' ||
+                  parameter.location == 'formData')
+              .toList(growable: false);
+
+          if (queryParameters.isNotEmpty)
+            url += '?${queryParameters.map((Parameter parameter) {
+              if (parameter.collectionFormat == 'multi') {
+                if (parameter.values.containsKey('enum')) {
+                  return '''\${${parameter.name}.map((entry) => '${parameter.name}=\${entry.toJson()}').join('&')}''';
+                }
+
+                return '''\${${parameter.name}.map((entry) => '${parameter.name}=\${entry.toString()}').join('&')}''';
+              }
+
+              return '${parameter.name}=\$${parameter.name}';
+            }).join('&')}';
+
+          url += "'";
+
+          final withCredentials = (options.config['useCredentials'] == true);
+          final String logging = options.config['middleware']['logging'];
+
+          if (logging != null) {
+            buffer.writeln(
+                '''$logging({'path': '${nextPathPart.operation.path}', 'operation': '${nextPathPart.operation.name}', 'remoteMethodName': '${nextPathPart.operation.method}', 'parameters': {${nextPathPart.operation.parameters.map((Parameter parameter) => "'${parameter.name}':'\$${parameter.name}'").join(',')}}});''');
+          }
+
+          buffer.writeln('// ignore: omit_local_variable_types');
+          buffer.writeln(
+              'final Future<HttpRequest> Function(Map<String, String>) request = (Map<String, String> extraHeaders) async { ');
+
+          if (options.config.containsKey('headersFactory')) {
+            buffer.writeln(
+                'final headers = await ${options.config['headersFactory']}();');
+            buffer.writeln(
+                "headers['Content-Type'] = '${nextPathPart.operation.requestContentType}';");
+          } else {
+            buffer.writeln(
+                "final headers = {'Content-Type':'${nextPathPart.operation.requestContentType}'};");
+          }
+
+          buffer.writeln('headers.addAll(extraHeaders);');
+
+          buffer.writeln('return ${options.config['urlFactory']}()');
+
+          buffer.writeln('.then((url) => ');
+
+          if (nextPathPart.operation.requestContentType.toLowerCase() ==
+                  'multipart/form-data' &&
+              bodyParameters.isNotEmpty) {
+            final bodyData =
+                bodyParameters.map((parameter) => parameter.name).first;
+
+            buffer.writeln('$bodyData != null ? ');
+
+            buffer.writeln(
+                '''HttpRequest.request($url, method: '${nextPathPart.operation.name.toUpperCase()}', withCredentials: $withCredentials, sendData: ${bodyParameters.map((Parameter parameter) => parameter.name).first})''');
+
+            buffer.writeln(' : ');
+            buffer.writeln(
+                ''' HttpRequest.request($url, method: '${nextPathPart.operation.name.toUpperCase()}', withCredentials: $withCredentials ''');
+          } else {
+            buffer.writeln(
+                ''' HttpRequest.request($url, method: '${nextPathPart.operation.name.toUpperCase()}', withCredentials: $withCredentials ''');
+          }
+
+          if (nextPathPart.operation.requestContentType.toLowerCase() ==
+                  'multipart/form-data' &&
+              bodyParameters.isNotEmpty) {
+          } else {
+            buffer.writeln(", requestHeaders: headers");
+          }
+
+          if (bodyParameters.isNotEmpty &&
+              nextPathPart.operation.name != 'get') {
+            if (nextPathPart.operation.requestContentType ==
+                'application/json') {
+              buffer.writeln(
+                  ', sendData: json.encode(${bodyParameters.map((Parameter parameter) => parameter.name).first})');
+            } else {
+              buffer.writeln(
+                  ', sendData: ${bodyParameters.map((Parameter parameter) => parameter.name).first}');
+            }
+          }
+
+          buffer.writeln('));};');
+          buffer.writeln('return request(const <String, String>{})');
+
+          final String runOnStatus =
+              options.config['middleware']['retryOnStatus'];
+          final String runOnError =
+              options.config['middleware']['retryOnError'];
+          final String requestHandler =
+              options.config['middleware']['requestHandler'];
+          final String onError = options.config['middleware']['error'];
+
+          if (requestHandler != null) {
+            buffer.writeln('.then($requestHandler)');
+          }
+
+          if (runOnStatus != null && runOnError != null) {
+            buffer.writeln(
+                '.then($runOnStatus(request), onError: $runOnError(request))');
+          } else if (runOnStatus != null) {
+            buffer.writeln('.then($runOnStatus(request))');
+          } else if (runOnError != null) {
+            buffer.writeln(
+                '.then((request) => request, onError: $runOnError(request))');
+          }
+
+          if (onError != null)
+            buffer.writeln('.then($onError, onError: (dynamic _) {})');
+          /*else if (!(const <String>[
+            'LOGGING',
+            'RETRY_ON_STATUS',
+            'RETRY_ON_ERROR',
+            'REQUEST_HANDLER'
+          ].contains(event))) buffer.writeln('.then($method)');*/
+
+          buffer.writeln('.then((request) => request?.responseText)');
+
+          if (nextPathPart.operation.responseContentType ==
+              'application/json') {
+            buffer.writeln(
+                '.then((data) => data != null ? convert(json.decode(data) as S) : null);');
+          } else {
+            buffer.writeln(';');
+          }
+
+          buffer.writeln('}');
+        }
+      });
+
+      enumMap.forEach((K, V) {
+        buffer.writeln('$K get ${K.split('_').last}Enums => const $K._(null);');
+      });
+
+      buffer.writeln('}');
+
+      enumMap.forEach((K, V) {
+        buffer.writeln('class $K {');
+        buffer.writeln('final _value;');
+        buffer.writeln('const $K._(this._value);');
+
+        V?.forEach((enumValue) {
+          buffer.writeln("$K get $enumValue => const $K._('$enumValue');");
+        });
+
+        buffer.writeln('@override String toString() => _value;');
+        buffer.writeln('String toJson() => _value;');
+
+        buffer.writeln('}');
+      });
+    });
+
+    return buffer.toString();
 
     return null;
   }
@@ -480,7 +393,7 @@ class SwaggerGenerator extends Generator {
     return transformed;
   }
 
-  const SwaggerGenerator();
+  const SwaggerGenerator(this.options);
 }
 
 class _PathPart {
