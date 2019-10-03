@@ -9,7 +9,7 @@ class SwaggerService {
   const SwaggerService();
 
   Future<Blueprint> fetchDocumentation(final String url) async => http
-      .get(url)
+      .get(url, headers: {'Cache-Control': 'no-cache'})
       .then((http.Response response) => response.body)
       .then((String body) => new Map<String, dynamic>.from(json.decode(body)))
       .then((Map<String, dynamic> raw) =>
