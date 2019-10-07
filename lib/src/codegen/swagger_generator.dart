@@ -37,12 +37,8 @@ class SwaggerGenerator extends Generator {
     buffer.writeln(
         '''import 'package:angular/angular.dart' show Injectable, Inject;''');
 
-    final parentLib =
-        new RegExp(r'[^|]+').firstMatch(element.source.fullName).group(0);
-    final parentPath =
-        new RegExp(r'\/.+').firstMatch(element.source.fullName).group(0);
-
-    buffer.writeln('''import 'package:$parentLib$parentPath';''');
+    //  /xpert_libraries/lib/src/infrastructure/remote_service.dart
+    buffer.writeln('''import '${element.source.fullName.split('/').last}';''');
 
     buffer.writeln(
         'const List<Type> remoteServices = [${data.bundles.map(_bundleNameToClassName).join(',')}];');
