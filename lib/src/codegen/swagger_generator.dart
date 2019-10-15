@@ -1,30 +1,38 @@
 import 'dart:async';
 
-import 'package:analyzer/dart/element/element.dart';
-import 'package:source_gen/source_gen.dart';
 import 'package:build/build.dart';
-
 import 'package:built_swagger/src/infrastructure/swagger_service.dart';
 import 'package:built_swagger/src/domain/bundle.dart';
 import 'package:built_swagger/src/domain/operation.dart';
 import 'package:built_swagger/src/domain/path.dart';
 import 'package:built_swagger/src/domain/parameter.dart';
+import 'package:dart_style/dart_style.dart';
 
-class SwaggerGenerator extends Generator {
+class SwaggerBuilder implements Builder {
   final BuilderOptions options;
+  final String _outputExtension;
 
   @override
-  FutureOr<String> generate(LibraryReader library, BuildStep buildStep) async {
-    final path = buildStep.inputId.path.split('/').sublist(1).join('/');
-    final element = library.allElements.firstWhere(
-        (Element element) =>
-            element.location.components.first.contains(path),
-        orElse: () => null);
+  Map<String, List<String>> get buildExtensions => {
+        '.dart': [_outputExtension]
+      };
 
-    if (element == null) return null;
+  SwaggerBuilder(this.options,
+      {String outputExtension: '.swagger.dart', String outputStyle})
+      : this._outputExtension = outputExtension;
 
+  @override
+  Future build(BuildStep buildStep) async {
+    final inputId = buildStep.inputId,
+        outputId = inputId.changeExtension(_outputExtension);
+    await buildStep.writeAsString(
+        outputId,
+        DartFormatter(fixes: StyleFix.all)
+            .format(await generate(inputId.pathSegments.last)));
+  }
+
+  FutureOr<String> generate(String fileName) async {
     final String endPoint = options.config['endPoint'];
-    print('swagger url: $endPoint');
     final buffer = new StringBuffer();
     final service = const SwaggerService();
     final data = await service.fetchDocumentation(endPoint);
@@ -35,13 +43,13 @@ class SwaggerGenerator extends Generator {
     buffer.writeln('''import 'dart:convert' show json;''');
     buffer.writeln('''import 'dart:html' show FormData, HttpRequest;''');
     buffer.writeln(
-        '''import 'package:angular/angular.dart' show Injectable, Inject;''');
+        '''import 'package:angular/angular.dart' show ClassProvider, Injectable;''');
 
     //  /xpert_libraries/lib/src/infrastructure/remote_service.dart
-    buffer.writeln('''import '${element.source.fullName.split('/').last}';''');
+    buffer.writeln('''import '$fileName';''');
 
     buffer.writeln(
-        'const List<Type> remoteServices = [${data.bundles.map(_bundleNameToClassName).join(',')}];');
+        'const List remoteServices = [${data.bundles.map(_bundleNameToClassName).map((name) => 'ClassProvider($name)').join(',')}];');
 
     data.bundles.forEach((bundle) {
       final bundleClassName = _bundleNameToClassName(bundle);
@@ -348,9 +356,11 @@ class SwaggerGenerator extends Generator {
       });
     });
 
-    return buffer.toString();
+    final result = buffer.toString();
 
-    return null;
+    print({'build successful': true, 'generated from': endPoint});
+
+    return result;
   }
 
   String _toReturnType(String className, Parameter parameter) {
@@ -389,8 +399,6 @@ class SwaggerGenerator extends Generator {
 
     return transformed;
   }
-
-  const SwaggerGenerator(this.options);
 }
 
 class _PathPart {
