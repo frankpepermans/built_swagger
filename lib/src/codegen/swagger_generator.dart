@@ -204,19 +204,27 @@ class SwaggerBuilder implements Builder {
                   parameter.location == 'body' ||
                   parameter.location == 'formData')
               .toList(growable: false);
+          final queryParameterBuild = <String>[];
+          if (queryParameters.isNotEmpty) {
+            url += '\${buildQueryParams()}';
+          }
 
           if (queryParameters.isNotEmpty)
-            url += '?${queryParameters.map((Parameter parameter) {
+            queryParameters.forEach((parameter) {
               if (parameter.collectionFormat == 'multi') {
                 if (parameter.values.containsKey('enum')) {
-                  return '''\${${parameter.name}.map((entry) => '${parameter.name}=\${entry.toJson()}').join('&')}''';
+                  return queryParameterBuild.add(
+                      '''list.add(\'\${${parameter.name}.map((entry) => '${parameter.name}=\${entry.toJson()}').join('&')}\');''');
                 }
 
-                return '''\${${parameter.name}.map((entry) => '${parameter.name}=\${entry.toString()}').join('&')}''';
+                return queryParameterBuild.add(
+                    '''list.add(\'\${${parameter.name}.map((entry) => '${parameter.name}=\${entry.toString()}').join('&')}\');''');
               }
 
-              return '${parameter.name}=\$${parameter.name}';
-            }).join('&')}';
+              return queryParameterBuild.add(parameter.isRequired
+                  ? 'list.add(${parameter.name}=\$${parameter.name});'
+                  : 'if (${parameter.name} != null) list.add(\'${parameter.name}=\$${parameter.name}\');');
+            });
 
           url += "'";
 
@@ -243,6 +251,18 @@ class SwaggerBuilder implements Builder {
           }
 
           buffer.writeln('headers.addAll(extraHeaders);');
+
+          buffer.writeln('''final buildQueryParams = () {
+            final list = <String>[];
+    
+            ${queryParameterBuild.join(';')}
+    
+            if (list.isNotEmpty) {
+              return '?\${list.join('&')}';
+            }
+    
+            return '';
+          };''');
 
           buffer.writeln('return ${options.config['urlFactory']}()');
 
